@@ -11,7 +11,7 @@ import { AlertDialog, AlertDialogAction, AlertDialogCancel, AlertDialogContent, 
 import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuTrigger } from '@/components/ui/dropdown-menu'
 import { MoreHorizontal, Edit2, Trash2 } from 'lucide-react'
 import { Flow } from '@/types'
-import { supabase } from '@/lib/supabase'
+import { databases, DATABASE_ID, COLLECTIONS } from '@/lib/appwrite'
 import { toast } from 'sonner'
 
 interface FlowActionsProps {
@@ -37,20 +37,17 @@ export function FlowActions({ flow, projectId, onUpdate }: FlowActionsProps) {
     }
 
     try {
-      const { data, error } = await supabase
-        .from('flows')
-        .update({
+      const updatedFlow: unknown = await databases.updateDocument(
+        DATABASE_ID,
+        COLLECTIONS.FLOWS,
+        flow.$id,
+        {
           name: formData.name.trim(),
-          description: formData.description.trim(),
-          updated_at: new Date().toISOString()
-        })
-        .eq('id', flow.id)
-        .select()
-        .single()
+          description: formData.description.trim()
+        }
+      )
 
-      if (error) throw error
-
-      onUpdate(data)
+      onUpdate(updatedFlow as unknown as Flow)
       setIsEditDialogOpen(false)
       toast.success('Flow updated successfully')
     } catch (error) {
@@ -61,12 +58,11 @@ export function FlowActions({ flow, projectId, onUpdate }: FlowActionsProps) {
 
   const handleDelete = async () => {
     try {
-      const { error } = await supabase
-        .from('flows')
-        .delete()
-        .eq('id', flow.id)
-
-      if (error) throw error
+      await databases.deleteDocument(
+        DATABASE_ID,
+        COLLECTIONS.FLOWS,
+        flow.$id
+      )
 
       toast.success('Flow deleted successfully')
       router.push(`/projects/${projectId}`)
@@ -123,7 +119,7 @@ export function FlowActions({ flow, projectId, onUpdate }: FlowActionsProps) {
       </DropdownMenu>
 
       <Dialog open={isEditDialogOpen} onOpenChange={setIsEditDialogOpen}>
-        <DialogContent className="sm:max-w-md">
+        <DialogContent className="sm:max-w-2xl w-full max-w-[90vw] max-h-[80vh] overflow-hidden">
           <form onSubmit={handleEdit}>
             <DialogHeader>
               <DialogTitle>Edit Flow</DialogTitle>
@@ -131,26 +127,35 @@ export function FlowActions({ flow, projectId, onUpdate }: FlowActionsProps) {
                 Update the flow name and description.
               </DialogDescription>
             </DialogHeader>
-            <div className="space-y-4 py-4">
-              <div className="space-y-2">
-                <Label htmlFor="edit-flow-name">Flow Name</Label>
-                <Input
-                  id="edit-flow-name"
-                  placeholder="Enter flow name"
-                  value={formData.name}
-                  onChange={(e) => setFormData({ ...formData, name: e.target.value })}
-                  required
-                />
-              </div>
-              <div className="space-y-2">
-                <Label htmlFor="edit-flow-description">Description</Label>
-                <Textarea
-                  id="edit-flow-description"
-                  placeholder="Enter flow description (optional)"
-                  value={formData.description}
-                  onChange={(e) => setFormData({ ...formData, description: e.target.value })}
-                  rows={3}
-                />
+            <div className="overflow-x-auto overflow-y-auto py-4 modal-scroll max-h-[calc(80vh-160px)]">
+              <div className="flex gap-6 min-w-max">
+                {/* Left Column */}
+                <div className="flex-1 min-w-[300px] space-y-4">
+                  <div className="space-y-2">
+                    <Label htmlFor="edit-flow-name">Flow Name</Label>
+                    <Input
+                      id="edit-flow-name"
+                      placeholder="Enter flow name"
+                      value={formData.name}
+                      onChange={(e) => setFormData({ ...formData, name: e.target.value })}
+                      required
+                    />
+                  </div>
+                </div>
+                
+                {/* Right Column */}
+                <div className="flex-1 min-w-[300px] space-y-4">
+                  <div className="space-y-2">
+                    <Label htmlFor="edit-flow-description">Description</Label>
+                    <Textarea
+                      id="edit-flow-description"
+                      placeholder="Enter flow description (optional)"
+                      value={formData.description}
+                      onChange={(e) => setFormData({ ...formData, description: e.target.value })}
+                      rows={5}
+                    />
+                  </div>
+                </div>
               </div>
             </div>
             <DialogFooter>

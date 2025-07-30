@@ -15,7 +15,7 @@ import { AlertDialog, AlertDialogAction, AlertDialogCancel, AlertDialogContent, 
 import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuTrigger } from '@/components/ui/dropdown-menu'
 import { GitBranch, MoreHorizontal, Edit2, Trash2 } from 'lucide-react'
 import { Flow, Section } from '@/types'
-import { supabase } from '@/lib/supabase'
+import { databases, DATABASE_ID, COLLECTIONS, ID } from '@/lib/appwrite'
 import { toast } from 'sonner'
 
 interface FlowCardProps {
@@ -45,22 +45,19 @@ export function FlowCard({ flow, projectId, sections = [], onUpdate, onDelete }:
     }
 
     try {
-      const { data, error } = await supabase
-        .from('flows')
-        .update({
+      const updatedFlow: unknown = await databases.updateDocument(
+        DATABASE_ID,
+        COLLECTIONS.FLOWS,
+        flow.$id,
+        {
           name: formData.name.trim(),
           description: formData.description.trim(),
           section_id: formData.section_id || null,
-          status: formData.status,
-          updated_at: new Date().toISOString()
-        })
-        .eq('id', flow.id)
-        .select()
-        .single()
+          status: formData.status
+        }
+      )
 
-      if (error) throw error
-
-      onUpdate(data)
+      onUpdate(updatedFlow as unknown as Flow)
       setIsEditDialogOpen(false)
       toast.success('Flow updated successfully')
     } catch (error) {
@@ -71,14 +68,13 @@ export function FlowCard({ flow, projectId, sections = [], onUpdate, onDelete }:
 
   const handleDelete = async () => {
     try {
-      const { error } = await supabase
-        .from('flows')
-        .delete()
-        .eq('id', flow.id)
+      await databases.deleteDocument(
+        DATABASE_ID,
+        COLLECTIONS.FLOWS,
+        flow.$id
+      )
 
-      if (error) throw error
-
-      onDelete(flow.id)
+      onDelete(flow.$id)
       toast.success('Flow deleted successfully')
     } catch (error) {
       toast.error('Failed to delete flow')
@@ -129,7 +125,7 @@ export function FlowCard({ flow, projectId, sections = [], onUpdate, onDelete }:
   return (
     <>
       <Card className="h-full hover:shadow-lg transition-shadow cursor-pointer border-slate-200 group relative">
-        <Link href={`/projects/${projectId}/flows/${flow.id}`} className="block h-full">
+        <Link href={`/projects/${projectId}/flows/${flow.$id}`} className="block h-full">
           <CardHeader>
             <div className="flex items-start justify-between">
               <CardTitle className="text-lg flex items-center gap-2 flex-1">
@@ -197,14 +193,14 @@ export function FlowCard({ flow, projectId, sections = [], onUpdate, onDelete }:
           </CardHeader>
           <CardContent>
             <div className="text-sm text-slate-500">
-              Updated {new Date(flow.updated_at).toLocaleDateString()}
+              Updated {new Date(flow.$updatedAt).toLocaleDateString()}
             </div>
           </CardContent>
         </Link>
       </Card>
 
       <Dialog open={isEditDialogOpen} onOpenChange={setIsEditDialogOpen}>
-        <DialogContent className="sm:max-w-md">
+        <DialogContent className="sm:max-w-2xl w-full max-w-[90vw] max-h-[80vh] overflow-hidden">
           <form onSubmit={handleEdit}>
             <DialogHeader>
               <DialogTitle>Edit Flow</DialogTitle>
@@ -212,61 +208,70 @@ export function FlowCard({ flow, projectId, sections = [], onUpdate, onDelete }:
                 Update the flow name and description.
               </DialogDescription>
             </DialogHeader>
-            <div className="space-y-4 py-4">
-              <div className="space-y-2">
-                <Label htmlFor="edit-flow-name">Flow Name</Label>
-                <Input
-                  id="edit-flow-name"
-                  placeholder="Enter flow name"
-                  value={formData.name}
-                  onChange={(e) => setFormData({ ...formData, name: e.target.value })}
-                  required
-                />
-              </div>
-              <div className="space-y-2">
-                <Label htmlFor="edit-flow-description">Description</Label>
-                <Textarea
-                  id="edit-flow-description"
-                  placeholder="Enter flow description (optional)"
-                  value={formData.description}
-                  onChange={(e) => setFormData({ ...formData, description: e.target.value })}
-                  rows={3}
-                />
-              </div>
-              <div className="space-y-2">
-                <Label htmlFor="edit-flow-status">Status</Label>
-                <Select value={formData.status} onValueChange={(value: Flow['status']) => setFormData({ ...formData, status: value })}>
-                  <SelectTrigger>
-                    <SelectValue />
-                  </SelectTrigger>
-                  <SelectContent>
-                    <SelectItem value="draft">Draft</SelectItem>
-                    <SelectItem value="in-progress">In Progress</SelectItem>
-                    <SelectItem value="review">Review</SelectItem>
-                    <SelectItem value="approved">Approved</SelectItem>
-                    <SelectItem value="completed">Completed</SelectItem>
-                    <SelectItem value="archived">Archived</SelectItem>
-                  </SelectContent>
-                </Select>
-              </div>
-              {sections.length > 0 && (
-                <div className="space-y-2">
-                  <Label htmlFor="edit-flow-section">Section</Label>
-                  <Select value={formData.section_id} onValueChange={(value) => setFormData({ ...formData, section_id: value })}>
-                    <SelectTrigger>
-                      <SelectValue placeholder="Select a section (optional)" />
-                    </SelectTrigger>
-                    <SelectContent>
-                      <SelectItem value="">No section</SelectItem>
-                      {sections.map((section) => (
-                        <SelectItem key={section.id} value={section.id}>
-                          {section.name}
-                        </SelectItem>
-                      ))}
-                    </SelectContent>
-                  </Select>
+            <div className="overflow-x-auto overflow-y-auto py-4 modal-scroll max-h-[calc(80vh-160px)]">
+              <div className="flex gap-6 min-w-max">
+                {/* Left Column */}
+                <div className="flex-1 min-w-[300px] space-y-4">
+                  <div className="space-y-2">
+                    <Label htmlFor="edit-flow-name">Flow Name</Label>
+                    <Input
+                      id="edit-flow-name"
+                      placeholder="Enter flow name"
+                      value={formData.name}
+                      onChange={(e) => setFormData({ ...formData, name: e.target.value })}
+                      required
+                    />
+                  </div>
                 </div>
-              )}
+                
+                {/* Right Column */}
+                <div className="flex-1 min-w-[300px] space-y-4">
+                  <div className="space-y-2">
+                    <Label htmlFor="edit-flow-description">Description</Label>
+                    <Textarea
+                      id="edit-flow-description"
+                      placeholder="Enter flow description (optional)"
+                      value={formData.description}
+                      onChange={(e) => setFormData({ ...formData, description: e.target.value })}
+                      rows={3}
+                    />
+                  </div>
+                  <div className="space-y-2">
+                    <Label htmlFor="edit-flow-status">Status</Label>
+                    <Select value={formData.status} onValueChange={(value: Flow['status']) => setFormData({ ...formData, status: value })}>
+                      <SelectTrigger>
+                        <SelectValue />
+                      </SelectTrigger>
+                      <SelectContent>
+                        <SelectItem value="draft">Draft</SelectItem>
+                        <SelectItem value="in-progress">In Progress</SelectItem>
+                        <SelectItem value="review">Review</SelectItem>
+                        <SelectItem value="approved">Approved</SelectItem>
+                        <SelectItem value="completed">Completed</SelectItem>
+                        <SelectItem value="archived">Archived</SelectItem>
+                      </SelectContent>
+                    </Select>
+                  </div>
+                  {sections.length > 0 && (
+                    <div className="space-y-2">
+                      <Label htmlFor="edit-flow-section">Section</Label>
+                      <Select value={formData.section_id} onValueChange={(value) => setFormData({ ...formData, section_id: value })}>
+                        <SelectTrigger>
+                          <SelectValue placeholder="Select a section (optional)" />
+                        </SelectTrigger>
+                        <SelectContent>
+                          <SelectItem value="">No section</SelectItem>
+                          {sections.map((section) => (
+                            <SelectItem key={section.$id} value={section.$id}>
+                              {section.name}
+                            </SelectItem>
+                          ))}
+                        </SelectContent>
+                      </Select>
+                    </div>
+                  )}
+                </div>
+              </div>
             </div>
             <DialogFooter>
               <Button type="button" variant="outline" onClick={() => setIsEditDialogOpen(false)}>

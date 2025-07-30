@@ -11,7 +11,8 @@ import { Separator } from '@/components/ui/separator'
 import { AlertDialog, AlertDialogAction, AlertDialogCancel, AlertDialogContent, AlertDialogDescription, AlertDialogFooter, AlertDialogHeader, AlertDialogTitle, AlertDialogTrigger } from '@/components/ui/alert-dialog'
 import { X, Edit2, Trash2, ExternalLink, Plus } from 'lucide-react'
 import { Step, Link } from '@/types'
-import { supabase } from '@/lib/supabase'
+import { databases, DATABASE_ID, COLLECTIONS } from '@/lib/appwrite'
+import { useChangelog } from '@/hooks/use-changelog'
 import { toast } from 'sonner'
 
 interface StepPanelProps {
@@ -24,6 +25,7 @@ interface StepPanelProps {
 
 export function StepPanel({ step, isOpen, onClose, onUpdate, onDelete }: StepPanelProps) {
   const [isEditing, setIsEditing] = useState(false)
+  const { logStepUpdated, logStepDeleted } = useChangelog()
   const [formData, setFormData] = useState({
     name: '',
     description: '',
@@ -51,24 +53,54 @@ export function StepPanel({ step, isOpen, onClose, onUpdate, onDelete }: StepPan
     if (!step) return
 
     try {
-      const { data, error } = await supabase
-        .from('steps')
-        .update({
+      // Detectar cambios y registrarlos
+      const changes = []
+      if (step.name !== formData.name.trim()) {
+        changes.push({ field: 'name', old: step.name, new: formData.name.trim() })
+      }
+      if (step.description !== formData.description.trim()) {
+        changes.push({ field: 'description', old: step.description, new: formData.description.trim() })
+      }
+      if (step.microservice !== formData.microservice.trim()) {
+        changes.push({ field: 'microservice', old: step.microservice, new: formData.microservice.trim() })
+      }
+      if (step.functional_description !== formData.functional_description.trim()) {
+        changes.push({ field: 'functional_description', old: step.functional_description, new: formData.functional_description.trim() })
+      }
+      if (step.links !== formData.links.trim()) {
+        changes.push({ field: 'links', old: step.links, new: formData.links.trim() })
+      }
+      if (step.bdd_cases !== formData.bdd_cases.trim()) {
+        changes.push({ field: 'bdd_cases', old: step.bdd_cases, new: formData.bdd_cases.trim() })
+      }
+
+      const updatedStep: unknown = await databases.updateDocument(
+        DATABASE_ID,
+        COLLECTIONS.STEPS,
+        step.$id,
+        {
           name: formData.name.trim(),
           description: formData.description.trim(),
           microservice: formData.microservice.trim(),
           functional_description: formData.functional_description.trim(),
           links: formData.links.trim(),
-          bdd_cases: formData.bdd_cases.trim(),
-          updated_at: new Date().toISOString()
-        })
-        .eq('id', step.id)
-        .select()
-        .single()
+          bdd_cases: formData.bdd_cases.trim()
+        }
+      )
 
-      if (error) throw error
+      // Registrar cada cambio en el historial
+      for (const change of changes) {
+        await logStepUpdated(
+          step.flow_id,
+          step.$id,
+          formData.name.trim() || step.name,
+          change.field,
+          change.old,
+          change.new
+        )
+      }
 
-      onUpdate(data)
+      onUpdate(updatedStep as unknown as Step)
       setIsEditing(false)
       toast.success('Step updated successfully')
     } catch (error) {
@@ -81,14 +113,16 @@ export function StepPanel({ step, isOpen, onClose, onUpdate, onDelete }: StepPan
     if (!step) return
 
     try {
-      const { error } = await supabase
-        .from('steps')
-        .delete()
-        .eq('id', step.id)
+      // Registrar la eliminación antes de borrar
+      await logStepDeleted(step.flow_id, step.name, step.microservice)
 
-      if (error) throw error
+      await databases.deleteDocument(
+        DATABASE_ID,
+        COLLECTIONS.STEPS,
+        step.$id
+      )
 
-      onDelete(step.id)
+      onDelete(step.$id)
       onClose()
       toast.success('Step deleted successfully')
     } catch (error) {
@@ -111,8 +145,8 @@ export function StepPanel({ step, isOpen, onClose, onUpdate, onDelete }: StepPan
 
   return (
     <Sheet open={isOpen} onOpenChange={onClose}>
-      <SheetContent className="w-[400px] sm:w-[540px]">
-        <SheetHeader>
+      <SheetContent className="w-[400px] sm:w-[540px] flex flex-col">
+        <SheetHeader className="flex-shrink-0">
           <div className="flex items-center justify-between">
             <div className="flex-1">
               <SheetTitle className="text-left">
@@ -174,7 +208,8 @@ export function StepPanel({ step, isOpen, onClose, onUpdate, onDelete }: StepPan
           </SheetDescription>
         </SheetHeader>
 
-        <div className="py-6 space-y-6">
+        <div className="flex-1 overflow-y-auto py-6">
+          <div className="space-y-6 pr-2">
           <div>
             <Label className="text-sm font-medium text-slate-700">Description</Label>
             {isEditing ? (
@@ -272,10 +307,11 @@ export function StepPanel({ step, isOpen, onClose, onUpdate, onDelete }: StepPan
               </div>
             )}
           </div>
+          </div>
         </div>
 
         {isEditing && (
-          <SheetFooter>
+          <SheetFooter className="flex-shrink-0">
             <Button variant="outline" onClick={() => setIsEditing(false)}>
               Cancel
             </Button>

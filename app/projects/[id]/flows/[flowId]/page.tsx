@@ -12,27 +12,33 @@ import { ResizablePanelGroup, ResizablePanel, ResizableHandle } from '@/componen
 import { ScrollArea } from '@/components/ui/scroll-area'
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
 import { Badge } from '@/components/ui/badge'
-import { ArrowLeft, Plus, GitBranch } from 'lucide-react'
-import { supabase } from '@/lib/supabase'
+import { ArrowLeft, Plus, GitBranch, PanelLeftClose, PanelLeftOpen } from 'lucide-react'
+import { databases, DATABASE_ID, COLLECTIONS, ID, Query } from '@/lib/appwrite'
 import { Project, Flow, Step } from '@/types'
 import { FlowDiagram } from '@/components/flow-diagram'
 import { StepPanel } from '@/components/step-panel'
 import { FlowActions } from '@/components/flow-actions'
 import { FlowExport } from '@/components/flow-export'
+import { FlowChangelog } from '@/components/flow-changelog'
+import { GitHubConfig } from '@/components/github-config'
+import { EditableTitle } from '@/components/editable-title'
+import { useChangelog } from '@/hooks/use-changelog'
 import { toast } from 'sonner'
 
 export default function FlowPage() {
   const params = useParams()
   const projectId = params.id as string
   const flowId = params.flowId as string
-  
+  const { logStepCreated, logFlowUpdated } = useChangelog()
+
   const [project, setProject] = useState<Project | null>(null)
   const [flow, setFlow] = useState<Flow | null>(null)
-  const [steps, setSteps] = useState<Step[]>([])
   const [allFlows, setAllFlows] = useState<Flow[]>([])
+  const [steps, setSteps] = useState<Step[]>([])
   const [selectedStep, setSelectedStep] = useState<Step | null>(null)
   const [isLoading, setIsLoading] = useState(true)
   const [isDialogOpen, setIsDialogOpen] = useState(false)
+  const [isSidebarVisible, setIsSidebarVisible] = useState(true)
   const [formData, setFormData] = useState({
     name: '',
     description: '',
@@ -50,44 +56,42 @@ export default function FlowPage() {
   const fetchData = async () => {
     try {
       // Fetch project
-      const { data: projectData, error: projectError } = await supabase
-        .from('projects')
-        .select('*')
-        .eq('id', projectId)
-        .single()
-
-      if (projectError) throw projectError
-      setProject(projectData)
+      const projectData = await databases.getDocument(
+        DATABASE_ID,
+        COLLECTIONS.PROJECTS,
+        projectId
+      )
+      setProject(projectData as unknown as Project)
 
       // Fetch current flow
-      const { data: flowData, error: flowError } = await supabase
-        .from('flows')
-        .select('*')
-        .eq('id', flowId)
-        .single()
-
-      if (flowError) throw flowError
-      setFlow(flowData)
+      const flowData = await databases.getDocument(
+        DATABASE_ID,
+        COLLECTIONS.FLOWS,
+        flowId
+      )
+      setFlow(flowData as unknown as Flow)
 
       // Fetch all flows for sidebar
-      const { data: allFlowsData, error: allFlowsError } = await supabase
-        .from('flows')
-        .select('*')
-        .eq('project_id', projectId)
-        .order('updated_at', { ascending: false })
-
-      if (allFlowsError) throw allFlowsError
-      setAllFlows(allFlowsData || [])
+      const allFlowsResponse = await databases.listDocuments(
+        DATABASE_ID,
+        COLLECTIONS.FLOWS,
+        [
+          Query.equal('project_id', projectId),
+          Query.orderDesc('$updatedAt')
+        ]
+      )
+      setAllFlows(allFlowsResponse.documents as unknown as Flow[])
 
       // Fetch steps
-      const { data: stepsData, error: stepsError } = await supabase
-        .from('steps')
-        .select('*')
-        .eq('flow_id', flowId)
-        .order('order', { ascending: true })
-
-      if (stepsError) throw stepsError
-      setSteps(stepsData || [])
+      const stepsResponse = await databases.listDocuments(
+        DATABASE_ID,
+        COLLECTIONS.STEPS,
+        [
+          Query.equal('flow_id', flowId),
+          Query.orderAsc('order')
+        ]
+      )
+      setSteps(stepsResponse.documents as unknown as Step[])
     } catch (error) {
       toast.error('Failed to fetch data')
       console.error('Error fetching data:', error)
@@ -107,9 +111,11 @@ export default function FlowPage() {
     try {
       const nextOrder = Math.max(...steps.map(s => s.order), 0) + 1
 
-      const { data, error } = await supabase
-        .from('steps')
-        .insert([{
+      const newStep = await databases.createDocument(
+        DATABASE_ID,
+        COLLECTIONS.STEPS,
+        ID.unique(),
+        {
           name: formData.name.trim(),
           description: formData.description.trim(),
           microservice: formData.microservice.trim(),
@@ -118,12 +124,13 @@ export default function FlowPage() {
           flow_id: flowId,
           order: nextOrder,
           links: '[]'
-        }])
-        .select()
+        }
+      )
 
-      if (error) throw error
+      // Registrar la creación del paso en el changelog
+      await logStepCreated(flowId, newStep.$id, formData.name.trim())
 
-      setSteps([...steps, data[0]])
+      setSteps([...steps, newStep as unknown as Step])
       setFormData({ name: '', description: '', microservice: '', functional_description: '', bdd_cases: '' })
       setIsDialogOpen(false)
       toast.success('Step created successfully')
@@ -134,12 +141,12 @@ export default function FlowPage() {
   }
 
   const handleStepUpdate = (updatedStep: Step) => {
-    setSteps(steps.map(step => step.id === updatedStep.id ? updatedStep : step))
+    setSteps(steps.map(step => step.$id === updatedStep.$id ? updatedStep : step))
     setSelectedStep(updatedStep)
   }
 
   const handleStepDelete = (stepId: string) => {
-    setSteps(steps.filter(step => step.id !== stepId))
+    setSteps(steps.filter(step => step.$id !== stepId))
     setSelectedStep(null)
   }
 
@@ -184,18 +191,56 @@ export default function FlowPage() {
               </Button>
             </Link>
             <div className="text-slate-400">/</div>
-            <h1 className="text-xl font-semibold text-slate-900">
-              {flow.name}
-            </h1>
+            <EditableTitle
+              title={flow.name}
+              onSave={async (newName) => {
+                const oldName = flow.name
+                
+                try {
+                  const updatedFlow = await databases.updateDocument(
+                    DATABASE_ID,
+                    COLLECTIONS.FLOWS,
+                    flowId,
+                    { name: newName }
+                  )
+                  
+                  // Registrar el cambio en el changelog
+                  if (oldName !== newName) {
+                    await logFlowUpdated(flowId, 'name', oldName, newName)
+                  }
+                  
+                  setFlow(updatedFlow as unknown as Flow)
+                  toast.success('Flow name updated successfully')
+                } catch (error) {
+                  toast.error('Failed to update flow name')
+                  console.error('Error updating flow name:', error)
+                }
+              }}
+              className="text-xl font-semibold text-slate-900"
+            />
           </div>
           
-          <div className="flex items-center gap-3">
+          <div className="flex items-center gap-3 overflow-x-auto">
+            <Button
+              variant="ghost"
+              size="sm"
+              onClick={() => setIsSidebarVisible(!isSidebarVisible)}
+              title={isSidebarVisible ? 'Ocultar sidebar' : 'Mostrar sidebar'}
+            >
+              {isSidebarVisible ? (
+                <PanelLeftClose className="w-4 h-4" />
+              ) : (
+                <PanelLeftOpen className="w-4 h-4" />
+              )}
+            </Button>
             <FlowActions
               flow={flow}
               projectId={projectId}
               onUpdate={(updatedFlow) => setFlow(updatedFlow)}
             />
             <FlowExport flowName={flow.name} />
+            <FlowChangelog flowId={flowId} />
+            <GitHubConfig />
             <Dialog open={isDialogOpen} onOpenChange={setIsDialogOpen}>
               <DialogTrigger asChild>
                 <Button>
@@ -203,68 +248,77 @@ export default function FlowPage() {
                   Add Step
                 </Button>
               </DialogTrigger>
-              <DialogContent className="sm:max-w-md">
-                <form onSubmit={handleSubmit}>
-                  <DialogHeader>
-                    <DialogTitle>Add New Step</DialogTitle>
-                    <DialogDescription>
-                      Add a new step to this flow.
-                    </DialogDescription>
-                  </DialogHeader>
-                  <div className="space-y-4 py-4">
-                    <div className="space-y-2">
-                      <Label htmlFor="name">Step Name</Label>
-                      <Input
-                        id="name"
-                        placeholder="Enter step name"
-                        value={formData.name}
-                        onChange={(e) => setFormData({ ...formData, name: e.target.value })}
-                        required
-                      />
-                    </div>
-                    <div className="space-y-2">
-                      <Label htmlFor="microservice">Microservice</Label>
-                      <Input
-                        id="microservice"
-                        placeholder="Enter microservice name"
-                        value={formData.microservice}
-                        onChange={(e) => setFormData({ ...formData, microservice: e.target.value })}
-                        required
-                      />
-                    </div>
-                    <div className="space-y-2">
-                      <Label htmlFor="description">Description</Label>
-                      <Textarea
-                        id="description"
-                        placeholder="Enter step description"
-                        value={formData.description}
-                        onChange={(e) => setFormData({ ...formData, description: e.target.value })}
-                        rows={2}
-                      />
-                    </div>
-                    <div className="space-y-2">
-                      <Label htmlFor="functional_description">Functional Requirements</Label>
-                      <Textarea
-                        id="functional_description"
-                        placeholder="Enter functional requirements"
-                        value={formData.functional_description}
-                        onChange={(e) => setFormData({ ...formData, functional_description: e.target.value })}
-                        rows={3}
-                      />
-                    </div>
-                    <div className="space-y-2">
-                      <Label htmlFor="bdd_cases">BDD Test Cases</Label>
-                      <Textarea
-                        id="bdd_cases"
-                        placeholder="Given... When... Then..."
-                        value={formData.bdd_cases}
-                        onChange={(e) => setFormData({ ...formData, bdd_cases: e.target.value })}
-                        rows={4}
-                        className="font-mono text-sm"
-                      />
+              <DialogContent className="sm:max-w-4xl w-full max-w-[95vw] max-h-[90vh] overflow-hidden">
+                <DialogHeader>
+                  <DialogTitle>Add New Step</DialogTitle>
+                  <DialogDescription>
+                    Add a new step to this flow.
+                  </DialogDescription>
+                </DialogHeader>
+                <form onSubmit={handleSubmit} className="flex flex-col max-h-[calc(90vh-120px)]">
+                  <div className="flex-1 overflow-x-auto overflow-y-auto py-4 modal-scroll">
+                    <div className="flex gap-6 min-w-max">
+                      {/* Left Column */}
+                      <div className="flex-1 min-w-[300px] space-y-4">
+                        <div className="space-y-2">
+                          <Label htmlFor="name">Step Name</Label>
+                          <Input
+                            id="name"
+                            placeholder="Enter step name"
+                            value={formData.name}
+                            onChange={(e) => setFormData({ ...formData, name: e.target.value })}
+                            required
+                          />
+                        </div>
+                        <div className="space-y-2">
+                          <Label htmlFor="microservice">Microservice</Label>
+                          <Input
+                            id="microservice"
+                            placeholder="Enter microservice name"
+                            value={formData.microservice}
+                            onChange={(e) => setFormData({ ...formData, microservice: e.target.value })}
+                            required
+                          />
+                        </div>
+                        <div className="space-y-2">
+                          <Label htmlFor="description">Description</Label>
+                          <Textarea
+                            id="description"
+                            placeholder="Enter step description"
+                            value={formData.description}
+                            onChange={(e) => setFormData({ ...formData, description: e.target.value })}
+                            rows={4}
+                          />
+                        </div>
+                      </div>
+                      
+                      {/* Right Column */}
+                      <div className="flex-1 min-w-[300px] space-y-4">
+                        <div className="space-y-2">
+                          <Label htmlFor="functional_description">Functional Requirements</Label>
+                          <Textarea
+                            id="functional_description"
+                            placeholder="Enter functional requirements"
+                            value={formData.functional_description}
+                            onChange={(e) => setFormData({ ...formData, functional_description: e.target.value })}
+                            rows={6}
+                          />
+                        </div>
+                        <div className="space-y-2">
+                          <Label htmlFor="bdd_cases">BDD Test Cases</Label>
+                          <Textarea
+                            id="bdd_cases"
+                            placeholder="Given... When... Then..."
+                            value={formData.bdd_cases}
+                            onChange={(e) => setFormData({ ...formData, bdd_cases: e.target.value })}
+                            rows={6}
+                            className="font-mono text-sm"
+                          />
+                        </div>
+                      </div>
                     </div>
                   </div>
-                  <DialogFooter>
+                  <DialogFooter className="flex-shrink-0 pt-4">
                     <Button type="button" variant="outline" onClick={() => setIsDialogOpen(false)}>
                       Cancel
                     </Button>
@@ -284,33 +338,36 @@ export default function FlowPage() {
       <div className="flex-1 overflow-hidden">
         <ResizablePanelGroup direction="horizontal">
           {/* Sidebar */}
-          <ResizablePanel defaultSize={20} minSize={15} maxSize={30}>
-            <div className="h-full bg-white border-r">
-              <div className="p-4">
-                <h2 className="font-semibold text-slate-900 mb-4">Flows</h2>
-                <ScrollArea className="h-[calc(100vh-200px)]">
-                  <div className="space-y-2">
-                    {allFlows.map((f) => (
-                      <Link key={f.id} href={`/projects/${projectId}/flows/${f.id}`}>
-                        <Card className={`cursor-pointer hover:bg-slate-50 transition-colors ${
-                          f.id === flowId ? 'ring-2 ring-blue-500 bg-blue-50' : ''
-                        }`}>
-                          <CardHeader className="p-3">
-                            <CardTitle className="text-sm flex items-center gap-2">
-                              <GitBranch className="w-4 h-4 text-blue-600" />
-                              {f.name}
-                            </CardTitle>
-                          </CardHeader>
-                        </Card>
-                      </Link>
-                    ))}
+          {isSidebarVisible && (
+            <>
+              <ResizablePanel defaultSize={20} minSize={15} maxSize={30}>
+                <div className="h-full bg-white border-r">
+                  <div className="p-4">
+                    <h2 className="font-semibold text-slate-900 mb-4">Flows</h2>
+                    <ScrollArea className="h-[calc(100vh-200px)]">
+                      <div className="space-y-2">
+                        {allFlows.map((f) => (
+                          <Link key={f.$id} href={`/projects/${projectId}/flows/${f.$id}`}>
+                            <Card className={`cursor-pointer hover:bg-slate-50 transition-colors ${
+                              f.$id === flowId ? 'ring-2 ring-blue-500 bg-blue-50' : ''
+                            }`}>
+                              <CardHeader className="p-3">
+                                <CardTitle className="text-sm flex items-center gap-2">
+                                  <GitBranch className="w-4 h-4 text-blue-600" />
+                                  {f.name}
+                                </CardTitle>
+                              </CardHeader>
+                            </Card>
+                          </Link>
+                        ))}
+                      </div>
+                    </ScrollArea>
                   </div>
-                </ScrollArea>
-              </div>
-            </div>
-          </ResizablePanel>
-
-          <ResizableHandle />
+                </div>
+              </ResizablePanel>
+              <ResizableHandle />
+            </>
+          )}
 
           {/* Flow Diagram */}
           <ResizablePanel defaultSize={80}>

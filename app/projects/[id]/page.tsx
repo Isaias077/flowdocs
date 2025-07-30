@@ -11,7 +11,7 @@ import { Label } from '@/components/ui/label'
 import { Textarea } from '@/components/ui/textarea'
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select'
 import { Plus, GitBranch, ArrowLeft, Search, Filter } from 'lucide-react'
-import { supabase } from '@/lib/supabase'
+import { databases, DATABASE_ID, COLLECTIONS, ID, Query } from '@/lib/appwrite'
 import { Project, Flow, Section } from '@/types'
 import { toast } from 'sonner'
 import { EditableTitle } from '@/components/editable-title'
@@ -19,6 +19,7 @@ import { DocumentationModal } from '@/components/documentation-modal'
 import { ProjectActions } from '@/components/project-actions'
 import { FlowCard } from '@/components/flow-card'
 import { SortableSectionTree } from '@/components/sortable-section-tree'
+import ProjectSyncButton from '@/components/project-sync-button'
 
 export default function ProjectPage() {
   const params = useParams()
@@ -51,34 +52,34 @@ export default function ProjectPage() {
   const fetchProjectAndFlows = async () => {
     try {
       // Fetch project
-      const { data: projectData, error: projectError } = await supabase
-        .from('projects')
-        .select('*')
-        .eq('id', projectId)
-        .single()
-
-      if (projectError) throw projectError
-      setProject(projectData)
+      const projectData = await databases.getDocument(
+        DATABASE_ID,
+        COLLECTIONS.PROJECTS,
+        projectId
+      )
+      setProject(projectData as unknown as Project)
 
       // Fetch flows
-      const { data: flowsData, error: flowsError } = await supabase
-        .from('flows')
-        .select('*')
-        .eq('project_id', projectId)
-        .order('updated_at', { ascending: false })
-
-      if (flowsError) throw flowsError
-      setFlows(flowsData || [])
+      const flowsResponse = await databases.listDocuments(
+        DATABASE_ID,
+        COLLECTIONS.FLOWS,
+        [
+          Query.equal('project_id', projectId),
+          Query.orderDesc('$updatedAt')
+        ]
+      )
+      setFlows(flowsResponse.documents as unknown as Flow[])
 
       // Fetch sections
-      const { data: sectionsData, error: sectionsError } = await supabase
-        .from('sections')
-        .select('*')
-        .eq('project_id', projectId)
-        .order('order', { ascending: true })
-
-      if (sectionsError) throw sectionsError
-      setSections(sectionsData || [])
+      const sectionsResponse = await databases.listDocuments(
+        DATABASE_ID,
+        COLLECTIONS.SECTIONS,
+        [
+          Query.equal('project_id', projectId),
+          Query.orderAsc('order')
+        ]
+      )
+      setSections(sectionsResponse.documents as unknown as Section[])
     } catch (error) {
       toast.error('Failed to fetch project data')
       console.error('Error fetching project:', error)
@@ -96,19 +97,19 @@ export default function ProjectPage() {
     }
 
     try {
-      const { data, error } = await supabase
-        .from('flows')
-        .insert([{
+      const newFlow = await databases.createDocument(
+        DATABASE_ID,
+        COLLECTIONS.FLOWS,
+        ID.unique(),
+        {
           name: formData.name.trim(),
           description: formData.description.trim(),
           project_id: projectId,
           status: formData.status
-        }])
-        .select()
+        }
+      )
 
-      if (error) throw error
-
-      setFlows([data[0], ...flows])
+      setFlows([newFlow as unknown as Flow, ...flows])
       setFormData({ name: '', description: '', status: 'draft' })
       setIsDialogOpen(false)
       toast.success('Flow created successfully')
@@ -129,19 +130,19 @@ export default function ProjectPage() {
     try {
       const nextOrder = Math.max(...sections.map(s => s.order), 0) + 1
 
-      const { data, error } = await supabase
-        .from('sections')
-        .insert([{
+      const newSection = await databases.createDocument(
+        DATABASE_ID,
+        COLLECTIONS.SECTIONS,
+        ID.unique(),
+        {
           name: sectionFormData.name.trim(),
           description: sectionFormData.description.trim(),
           project_id: projectId,
           order: nextOrder
-        }])
-        .select()
+        }
+      )
 
-      if (error) throw error
-
-      setSections([...sections, data[0]])
+      setSections([...sections, newSection as unknown as Section])
       setSectionFormData({ name: '', description: '' })
       setIsSectionDialogOpen(false)
       toast.success('Section created successfully')
@@ -153,15 +154,14 @@ export default function ProjectPage() {
 
   const handleProjectNameUpdate = async (newName: string) => {
     try {
-      const { error } = await supabase
-        .from('projects')
-        .update({
-          name: newName,
-          updated_at: new Date().toISOString()
-        })
-        .eq('id', projectId)
-
-      if (error) throw error
+      await databases.updateDocument(
+        DATABASE_ID,
+        COLLECTIONS.PROJECTS,
+        projectId,
+        {
+          name: newName
+        }
+      )
 
       setProject(prev => prev ? { ...prev, name: newName } : null)
       toast.success('Project name updated')
@@ -177,7 +177,7 @@ export default function ProjectPage() {
   }
 
   const handleSectionUpdate = (updatedSection: Section) => {
-    setSections(sections.map(s => s.id === updatedSection.id ? updatedSection : s))
+    setSections(sections.map(s => s.$id === updatedSection.$id ? updatedSection : s))
   }
 
   const handleSectionDelete = (sectionId: string) => {
@@ -187,7 +187,7 @@ export default function ProjectPage() {
       let allIds = [sectionId]
       
       for (const child of directChildren) {
-        allIds = allIds.concat(getAllSubsectionIds(child.id, allSections))
+        allIds = allIds.concat(getAllSubsectionIds(child.$id, allSections))
       }
       
       return allIds
@@ -196,7 +196,7 @@ export default function ProjectPage() {
     const allSectionIdsToDelete = getAllSubsectionIds(sectionId, sections)
     
     // Remove all sections and subsections
-    setSections(sections.filter(s => s.id !== sectionId))
+    setSections(sections.filter(s => s.$id !== sectionId))
     
     // Remove all flows that were in any of the deleted sections
     setFlows(flows.filter(f => !f.section_id || !allSectionIdsToDelete.includes(f.section_id)))
@@ -207,11 +207,11 @@ export default function ProjectPage() {
   }
 
   const handleFlowUpdate = (updatedFlow: Flow) => {
-    setFlows(flows.map(f => f.id === updatedFlow.id ? updatedFlow : f))
+    setFlows(flows.map(f => f.$id === updatedFlow.$id ? updatedFlow : f))
   }
 
   const handleFlowDelete = (flowId: string) => {
-    setFlows(flows.filter(f => f.id !== flowId))
+    setFlows(flows.filter(f => f.$id !== flowId))
   }
 
   const handleFlowCreate = (newFlow: Flow) => {
@@ -284,6 +284,11 @@ export default function ProjectPage() {
           </div>
           
           <div className="flex items-center gap-3">
+            <ProjectSyncButton 
+              projectId={projectId} 
+              showText={true}
+              variant="outline"
+            />
             <DocumentationModal
               projectId={projectId}
               documentationLinks={project.documentation_links || '[]'}
@@ -508,7 +513,7 @@ export default function ProjectPage() {
                 <div className="grid gap-6 md:grid-cols-2 lg:grid-cols-3">
                   {filteredFlows.filter(flow => !flow.section_id).map((flow) => (
                     <FlowCard
-                      key={flow.id}
+                      key={flow.$id}
                       flow={flow}
                       projectId={projectId}
                       sections={sections}

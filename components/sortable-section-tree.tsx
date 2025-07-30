@@ -33,7 +33,7 @@ import { Collapsible, CollapsibleContent, CollapsibleTrigger } from '@/component
 import { ChevronDown, ChevronRight, Folder, FolderOpen, Plus, MoreHorizontal, Edit2, Trash2, GitBranch, GripVertical } from 'lucide-react'
 import { Section, Flow } from '@/types'
 import { FlowCard } from './flow-card'
-import { supabase } from '@/lib/supabase'
+import { databases, DATABASE_ID, COLLECTIONS, ID } from '@/lib/appwrite'
 import { toast } from 'sonner'
 
 interface SortableSectionProps {
@@ -70,7 +70,7 @@ function SortableSection({
     transform,
     transition,
     isDragging,
-  } = useSortable({ id: section.id })
+  } = useSortable({ id: section.$id })
 
   const style = {
     transform: CSS.Transform.toString(transform),
@@ -96,8 +96,8 @@ function SortableSection({
     status: 'draft' as Flow['status']
   })
 
-  const sectionFlows = flows.filter(flow => flow.section_id === section.id)
-  const childSections = subsections.filter(sub => sub.parent_section_id === section.id)
+  const sectionFlows = flows.filter(flow => flow.section_id === section.$id)
+  const childSections = subsections.filter(sub => sub.parent_section_id === section.$id)
 
   const handleEditSection = async (e: React.FormEvent) => {
     e.preventDefault()
@@ -108,20 +108,17 @@ function SortableSection({
     }
 
     try {
-      const { data, error } = await supabase
-        .from('sections')
-        .update({
+      const updatedSection = await databases.updateDocument(
+        DATABASE_ID,
+        COLLECTIONS.SECTIONS,
+        section.$id,
+        {
           name: editFormData.name.trim(),
-          description: editFormData.description.trim(),
-          updated_at: new Date().toISOString()
-        })
-        .eq('id', section.id)
-        .select()
-        .single()
+          description: editFormData.description.trim()
+        }
+      )
 
-      if (error) throw error
-
-      onSectionUpdate(data)
+      onSectionUpdate(updatedSection as unknown as Section)
       setIsEditDialogOpen(false)
       toast.success('Section updated successfully')
     } catch (error) {
@@ -141,21 +138,20 @@ function SortableSection({
     try {
       const nextOrder = Math.max(...subsections.map(s => s.order), 0) + 1
 
-      const { data, error } = await supabase
-        .from('sections')
-        .insert([{
+      const newSubsection = await databases.createDocument(
+        DATABASE_ID,
+        COLLECTIONS.SECTIONS,
+        ID.unique(),
+        {
           name: subsectionFormData.name.trim(),
           description: subsectionFormData.description.trim(),
           project_id: projectId,
-          parent_section_id: section.id,
+          parent_section_id: section.$id,
           order: nextOrder
-        }])
-        .select()
-        .single()
+        }
+      )
 
-      if (error) throw error
-
-      onSectionCreate(data)
+      onSectionCreate(newSubsection as unknown as Section)
       setSubsectionFormData({ name: '', description: '' })
       setIsSubsectionDialogOpen(false)
       toast.success('Subsection created successfully')
@@ -174,21 +170,20 @@ function SortableSection({
     }
 
     try {
-      const { data, error } = await supabase
-        .from('flows')
-        .insert([{
+      const newFlow = await databases.createDocument(
+        DATABASE_ID,
+        COLLECTIONS.FLOWS,
+        ID.unique(),
+        {
           name: flowFormData.name.trim(),
           description: flowFormData.description.trim(),
           project_id: projectId,
-          section_id: section.id,
+          section_id: section.$id,
           status: flowFormData.status
-        }])
-        .select()
-        .single()
+        }
+      )
 
-      if (error) throw error
-
-      onFlowCreate(data)
+      onFlowCreate(newFlow as unknown as Flow)
       setFlowFormData({ name: '', description: '', status: 'draft' })
       setIsFlowDialogOpen(false)
       toast.success('Flow created successfully')
@@ -205,35 +200,35 @@ function SortableSection({
         let allIds = [sectionId]
         
         for (const child of directChildren) {
-          allIds = allIds.concat(getAllSubsectionIds(child.id, allSections))
+          allIds = allIds.concat(getAllSubsectionIds(child.$id, allSections))
         }
         
         return allIds
       }
 
-      const allSectionIdsToDelete = getAllSubsectionIds(section.id, subsections)
+      const allSectionIdsToDelete = getAllSubsectionIds(section.$id, subsections)
       
       const flowsToDelete = flows.filter(flow => 
         flow.section_id && allSectionIdsToDelete.includes(flow.section_id)
       )
       
       if (flowsToDelete.length > 0) {
-        const { error: flowsError } = await supabase
-          .from('flows')
-          .delete()
-          .in('section_id', allSectionIdsToDelete)
-
-        if (flowsError) throw flowsError
+        for (const flow of flowsToDelete) {
+          await databases.deleteDocument(
+            DATABASE_ID,
+            COLLECTIONS.FLOWS,
+            flow.$id
+          )
+        }
       }
 
-      const { error } = await supabase
-        .from('sections')
-        .delete()
-        .eq('id', section.id)
+      await databases.deleteDocument(
+        DATABASE_ID,
+        COLLECTIONS.SECTIONS,
+        section.$id
+      )
 
-      if (error) throw error
-
-      onSectionDelete(section.id)
+      onSectionDelete(section.$id)
       
       const deletedFlowsCount = flowsToDelete.length
       const deletedSubsectionsCount = allSectionIdsToDelete.length - 1
@@ -352,7 +347,7 @@ function SortableSection({
                   <div className="grid gap-4 md:grid-cols-2 lg:grid-cols-3">
                     {sectionFlows.map((flow) => (
                       <FlowCard
-                        key={flow.id}
+                        key={flow.$id}
                         flow={flow}
                         projectId={projectId}
                         onUpdate={onFlowUpdate}
@@ -365,7 +360,7 @@ function SortableSection({
 
               {childSections.map((childSection) => (
                 <SortableSection
-                  key={childSection.id}
+                  key={childSection.$id}
                   section={childSection}
                   subsections={subsections}
                   flows={flows}
@@ -565,28 +560,30 @@ export function SortableSectionTree({
     const { active, over } = event
 
     if (over && active.id !== over.id) {
-      const oldIndex = topLevelSections.findIndex(section => section.id === active.id)
-      const newIndex = topLevelSections.findIndex(section => section.id === over.id)
+      const oldIndex = topLevelSections.findIndex(section => section.$id === active.id)
+      const newIndex = topLevelSections.findIndex(section => section.$id === over.id)
 
       const newOrder = arrayMove(topLevelSections, oldIndex, newIndex)
       
       // Update the order in the database
       try {
         const updates = newOrder.map((section, index) => ({
-          id: section.id,
+          id: section.$id,
           order: index
         }))
 
         for (const update of updates) {
-          await supabase
-            .from('sections')
-            .update({ order: update.order })
-            .eq('id', update.id)
+          await databases.updateDocument(
+            DATABASE_ID,
+            COLLECTIONS.SECTIONS,
+            update.id,
+            { order: update.order }
+          )
         }
 
         // Update local state
         const updatedSections = sections.map(section => {
-          const update = updates.find(u => u.id === section.id)
+          const update = updates.find(u => u.id === section.$id)
           return update ? { ...section, order: update.order } : section
         })
 
@@ -605,11 +602,11 @@ export function SortableSectionTree({
       collisionDetection={closestCenter}
       onDragEnd={handleDragEnd}
     >
-      <SortableContext items={topLevelSections.map(s => s.id)} strategy={verticalListSortingStrategy}>
+      <SortableContext items={topLevelSections.map(s => s.$id)} strategy={verticalListSortingStrategy}>
         <div className="space-y-4">
           {topLevelSections.map((section) => (
             <SortableSection
-              key={section.id}
+              key={section.$id}
               section={section}
               subsections={sections}
               flows={flows}

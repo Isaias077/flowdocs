@@ -39,7 +39,7 @@ export function FlowDiagram({ steps, onNodeClick }: FlowDiagramProps) {
     const newNodes: Node[] = steps
       .sort((a, b) => a.order - b.order)  
       .map((step, index) => ({
-        id: step.id,
+        id: step.$id,
         type: 'stepNode',
         position: { x: index * 300 + 50, y: 100 },
         data: { 

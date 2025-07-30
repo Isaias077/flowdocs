@@ -13,7 +13,7 @@ import { Separator } from '@/components/ui/separator'
 import { AlertDialog, AlertDialogAction, AlertDialogCancel, AlertDialogContent, AlertDialogDescription, AlertDialogFooter, AlertDialogHeader, AlertDialogTitle, AlertDialogTrigger } from '@/components/ui/alert-dialog'
 import { FileText, Plus, ExternalLink, Trash2, Edit2 } from 'lucide-react'
 import { DocumentationLink } from '@/types'
-import { supabase } from '@/lib/supabase'
+import { databases, DATABASE_ID, COLLECTIONS } from '@/lib/appwrite'
 import { toast } from 'sonner'
 
 interface DocumentationModalProps {
@@ -85,15 +85,14 @@ export function DocumentationModal({ projectId, documentationLinks, onUpdate }: 
 
   const saveLinks = async (updatedLinks: DocumentationLink[]) => {
     try {
-      const { error } = await supabase
-        .from('projects')
-        .update({
-          documentation_links: JSON.stringify(updatedLinks),
-          updated_at: new Date().toISOString()
-        })
-        .eq('id', projectId)
-
-      if (error) throw error
+      await databases.updateDocument(
+        DATABASE_ID,
+        COLLECTIONS.PROJECTS,
+        projectId,
+        {
+          documentation_links: JSON.stringify(updatedLinks)
+        }
+      )
 
       onUpdate(JSON.stringify(updatedLinks))
       toast.success('Documentation links updated')

@@ -11,7 +11,7 @@ import { AlertDialog, AlertDialogAction, AlertDialogCancel, AlertDialogContent, 
 import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuTrigger } from '@/components/ui/dropdown-menu'
 import { MoreHorizontal, Edit2, Trash2 } from 'lucide-react'
 import { Project } from '@/types'
-import { supabase } from '@/lib/supabase'
+import { databases, DATABASE_ID, COLLECTIONS } from '@/lib/appwrite'
 import { toast } from 'sonner'
 
 interface ProjectActionsProps {
@@ -36,20 +36,17 @@ export function ProjectActions({ project, onUpdate }: ProjectActionsProps) {
     }
 
     try {
-      const { data, error } = await supabase
-        .from('projects')
-        .update({
+      const updatedProject: unknown = await databases.updateDocument(
+        DATABASE_ID,
+        COLLECTIONS.PROJECTS,
+        project.$id,
+        {
           name: formData.name.trim(),
-          description: formData.description.trim(),
-          updated_at: new Date().toISOString()
-        })
-        .eq('id', project.id)
-        .select()
-        .single()
+          description: formData.description.trim()
+        }
+      )
 
-      if (error) throw error
-
-      onUpdate(data)
+      onUpdate(updatedProject as Project)
       setIsEditDialogOpen(false)
       toast.success('Project updated successfully')
     } catch (error) {
@@ -60,12 +57,11 @@ export function ProjectActions({ project, onUpdate }: ProjectActionsProps) {
 
   const handleDelete = async () => {
     try {
-      const { error } = await supabase
-        .from('projects')
-        .delete()
-        .eq('id', project.id)
-
-      if (error) throw error
+      await databases.deleteDocument(
+        DATABASE_ID,
+        COLLECTIONS.PROJECTS,
+        project.$id
+      )
 
       toast.success('Project deleted successfully')
       router.push('/projects')

@@ -1,25 +1,25 @@
 export interface Project {
-  id: string
+  $id: string
   name: string
   description: string
   documentation_links: string
-  created_at: string
-  updated_at: string
+  $createdAt: string
+  $updatedAt: string
 }
 
 export interface Flow {
-  id: string
+  $id: string
   name: string
   description: string
   project_id: string
   section_id: string | null
   status: 'draft' | 'in-progress' | 'review' | 'approved' | 'completed' | 'archived'
-  created_at: string
-  updated_at: string
+  $createdAt: string
+  $updatedAt: string
 }
 
 export interface Step {
-  id: string
+  $id: string
   name: string
   description: string
   flow_id: string
@@ -28,8 +28,8 @@ export interface Step {
   functional_description: string
   links: string
   bdd_cases: string
-  created_at: string
-  updated_at: string
+  $createdAt: string
+  $updatedAt: string
 }
 
 export interface Link {
@@ -46,12 +46,26 @@ export interface DocumentationLink {
 }
 
 export interface Section {
-  id: string
+  $id: string
   name: string
   description: string
   project_id: string
   parent_section_id: string | null
   order: number
-  created_at: string
-  updated_at: string
+  $createdAt: string
+  $updatedAt: string
+}
+
+export interface FlowChangeLog {
+  $id: string
+  flow_id: string
+  step_id: string | null
+  change_type: 'step_created' | 'step_updated' | 'step_deleted' | 'flow_updated'
+  field_name: string | null
+  old_value: string | null
+  new_value: string | null
+  description: string
+  user_id: string | null
+  $createdAt: string
+  $updatedAt: string
 }

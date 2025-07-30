@@ -9,7 +9,7 @@ import { Input } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
 import { Textarea } from '@/components/ui/textarea'
 import { Plus, FolderOpen } from 'lucide-react'
-import { supabase } from '@/lib/supabase'
+import { databases, DATABASE_ID, COLLECTIONS, ID } from '@/lib/appwrite'
 import { Project } from '@/types'
 import { toast } from 'sonner'
 
@@ -28,13 +28,16 @@ export default function ProjectsPage() {
 
   const fetchProjects = async () => {
     try {
-      const { data, error } = await supabase
-        .from('projects')
-        .select('*')
-        .order('updated_at', { ascending: false })
-
-      if (error) throw error
-      setProjects(data || [])
+      const response = await databases.listDocuments(
+        DATABASE_ID,
+        COLLECTIONS.PROJECTS
+      )
+      
+      const sortedProjects = response.documents.sort((a, b) => 
+        new Date(b.$updatedAt).getTime() - new Date(a.$updatedAt).getTime()
+      )
+      
+      setProjects(sortedProjects as unknown as Project[])
     } catch (error) {
       toast.error('Failed to fetch projects')
       console.error('Error fetching projects:', error)
@@ -52,17 +55,17 @@ export default function ProjectsPage() {
     }
 
     try {
-      const { data, error } = await supabase
-        .from('projects')
-        .insert([{
+      const newProject = await databases.createDocument(
+        DATABASE_ID,
+        COLLECTIONS.PROJECTS,
+        ID.unique(),
+        {
           name: formData.name.trim(),
           description: formData.description.trim()
-        }])
-        .select()
+        }
+      )
 
-      if (error) throw error
-
-      setProjects([data[0], ...projects])
+      setProjects([newProject as unknown as Project, ...projects])
       setFormData({ name: '', description: '' })
       setIsDialogOpen(false)
       toast.success('Project created successfully')
@@ -161,7 +164,7 @@ export default function ProjectsPage() {
         ) : (
           <div className="grid gap-6 md:grid-cols-2 lg:grid-cols-3">
             {projects.map((project) => (
-              <Link key={project.id} href={`/projects/${project.id}`}>
+              <Link key={project.$id} href={`/projects/${project.$id}`}>
                 <Card className="h-full hover:shadow-lg transition-shadow cursor-pointer border-slate-200">
                   <CardHeader>
                     <CardTitle className="text-lg">{project.name}</CardTitle>
@@ -171,7 +174,7 @@ export default function ProjectsPage() {
                   </CardHeader>
                   <CardContent>
                     <div className="text-sm text-slate-500">
-                      Created {new Date(project.created_at).toLocaleDateString()}
+                      Created {new Date(project.$createdAt).toLocaleDateString()}
                     </div>
                   </CardContent>
                 </Card>
