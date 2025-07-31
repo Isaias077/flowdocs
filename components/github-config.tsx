@@ -124,6 +124,9 @@ export function GitHubConfig({ className }: GitHubConfigProps) {
       // Usar la nueva función para actualizar la configuración
       updateGitHubConfig(config)
       
+      // Disparar evento personalizado para notificar a otros componentes
+      window.dispatchEvent(new Event('github-config-updated'))
+      
       // Verificar la conexión después de guardar
       if (config.enabled && config.token && config.owner && config.repo) {
         const githubIntegration = getGitHubIntegration()
@@ -137,6 +140,9 @@ export function GitHubConfig({ className }: GitHubConfigProps) {
             setConnectionStatus('error')
           }
         }
+      } else {
+        setConnectionStatus('unknown')
+        setRepositoryInfo(null)
       }
       
       toast.success('Configuración guardada exitosamente')

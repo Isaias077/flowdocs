@@ -1,8 +1,8 @@
 import { Client, Databases, ID, Query } from 'appwrite'
 
-const appwriteUrl = process.env.NEXT_PUBLIC_APPWRITE_ENDPOINT || 'https://cloud.appwrite.io/v1'
-const appwriteProjectId = process.env.NEXT_PUBLIC_APPWRITE_PROJECT_ID || 'YOUR_PROJECT_ID'
-const appwriteDatabaseId = process.env.NEXT_PUBLIC_APPWRITE_DATABASE_ID || 'YOUR_DATABASE_ID'
+const appwriteUrl = process.env.NEXT_PUBLIC_APPWRITE_ENDPOINT || 'https://nyc.cloud.appwrite.io/v1'
+const appwriteProjectId = process.env.NEXT_PUBLIC_APPWRITE_PROJECT_ID || '6885c6280034f3eb8432'
+const appwriteDatabaseId = process.env.NEXT_PUBLIC_APPWRITE_DATABASE_ID || '688668c400181ad37226'
 
 const client = new Client()
   .setEndpoint(appwriteUrl)

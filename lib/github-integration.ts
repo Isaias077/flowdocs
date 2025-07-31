@@ -445,9 +445,7 @@ function getGitHubConfig(): GitHubConfig {
     if (savedConfig) {
       try {
         const parsed = JSON.parse(savedConfig);
-        if (parsed.enabled && parsed.token && parsed.owner && parsed.repo) {
-          return parsed;
-        }
+        return parsed;
       } catch (error) {
         console.error('Error parsing saved GitHub config:', error);
       }
@@ -464,12 +462,19 @@ function getGitHubConfig(): GitHubConfig {
 }
 
 export function getGitHubIntegration(): GitHubIntegration | null {
-  if (!githubIntegration) {
-    const config = getGitHubConfig();
-
-    if (config.enabled && config.token && config.owner && config.repo) {
-      githubIntegration = new GitHubIntegration(config);
+  const config = getGitHubConfig();
+  
+  // Si la configuración no está habilitada o está incompleta, resetear la integración
+  if (!config.enabled || !config.token || !config.owner || !config.repo) {
+    if (githubIntegration) {
+      githubIntegration = null;
     }
+    return null;
+  }
+  
+  // Si no hay integración pero la configuración es válida, crear una nueva
+  if (!githubIntegration) {
+    githubIntegration = new GitHubIntegration(config);
   }
 
   return githubIntegration;
