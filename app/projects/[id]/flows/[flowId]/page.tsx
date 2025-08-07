@@ -21,6 +21,7 @@ import { FlowActions } from '@/components/flow-actions'
 import { FlowExport } from '@/components/flow-export'
 import { FlowChangelog } from '@/components/flow-changelog'
 import { GitHubConfig } from '@/components/github-config'
+import { ExecutorForm } from '@/components/executor-form'
 import { EditableTitle } from '@/components/editable-title'
 import { useChangelog } from '@/hooks/use-changelog'
 import { toast } from 'sonner'
@@ -42,9 +43,14 @@ export default function FlowPage() {
   const [formData, setFormData] = useState({
     name: '',
     description: '',
-    microservice: '',
     functional_description: '',
     bdd_cases: ''
+  })
+  
+  const [executorData, setExecutorData] = useState({
+    type: '',
+    identifier: '',
+    metadata: {}
   })
 
   useEffect(() => {
@@ -118,7 +124,11 @@ export default function FlowPage() {
         {
           name: formData.name.trim(),
           description: formData.description.trim(),
-          microservice: formData.microservice.trim(),
+          executor: JSON.stringify({
+            type: executorData.type.trim(),
+            identifier: executorData.identifier.trim(),
+            metadata: executorData.metadata
+          }),
           functional_description: formData.functional_description.trim(),
           bdd_cases: formData.bdd_cases.trim(),
           flow_id: flowId,
@@ -131,7 +141,8 @@ export default function FlowPage() {
       await logStepCreated(flowId, newStep.$id, formData.name.trim())
 
       setSteps([...steps, newStep as unknown as Step])
-      setFormData({ name: '', description: '', microservice: '', functional_description: '', bdd_cases: '' })
+      setFormData({ name: '', description: '', functional_description: '', bdd_cases: '' })
+      setExecutorData({ type: '', identifier: '', metadata: {} })
       setIsDialogOpen(false)
       toast.success('Step created successfully')
     } catch (error) {
@@ -270,16 +281,11 @@ export default function FlowPage() {
                             required
                           />
                         </div>
-                        <div className="space-y-2">
-                          <Label htmlFor="microservice">Microservice</Label>
-                          <Input
-                            id="microservice"
-                            placeholder="Enter microservice name"
-                            value={formData.microservice}
-                            onChange={(e) => setFormData({ ...formData, microservice: e.target.value })}
-                            required
-                          />
-                        </div>
+                        <ExecutorForm
+                           executor={executorData}
+                           isEditing={true}
+                           onChange={setExecutorData}
+                         />
                         <div className="space-y-2">
                           <Label htmlFor="description">Description</Label>
                           <Textarea

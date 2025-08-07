@@ -9,11 +9,12 @@ import { Sheet, SheetContent, SheetDescription, SheetFooter, SheetHeader, SheetT
 import { Badge } from '@/components/ui/badge'
 import { Separator } from '@/components/ui/separator'
 import { AlertDialog, AlertDialogAction, AlertDialogCancel, AlertDialogContent, AlertDialogDescription, AlertDialogFooter, AlertDialogHeader, AlertDialogTitle, AlertDialogTrigger } from '@/components/ui/alert-dialog'
-import { X, Edit2, Trash2, ExternalLink, Plus } from 'lucide-react'
+import { Edit2, Trash2, ExternalLink } from 'lucide-react'
 import { Step, Link } from '@/types'
 import { useStepActions } from '@/lib/store'
 import { useChangelog } from '@/hooks/use-changelog'
 import { toast } from 'sonner'
+import { ExecutorForm } from '@/components/executor-form'
 
 interface StepPanelProps {
   step: Step | null
@@ -30,21 +31,34 @@ export function StepPanel({ step, isOpen, onClose, onUpdate, onDelete }: StepPan
   const [formData, setFormData] = useState({
     name: '',
     description: '',
-    microservice: '',
     functional_description: '',
     links: '',
     bdd_cases: ''
   })
 
+  const [executorData, setExecutorData] = useState({
+    type: '',
+    identifier: '',
+    metadata: {}
+  })
+
+  // Asegurar que executor tenga un valor por defecto
+  const executor = step?.executor || { type: 'microservice', identifier: 'unknown', metadata: {} as Record<string, string> }
+
   const handleEdit = () => {
     if (step) {
+      const executor = step.executor || { type: '', identifier: '', metadata: {} }
       setFormData({
         name: step.name,
-        description: step.description,
-        microservice: step.microservice,
-        functional_description: step.functional_description,
-        links: step.links,
-        bdd_cases: step.bdd_cases
+        description: step.description || '',
+        functional_description: step.functional_description || '',
+        links: JSON.stringify(step.links, null, 2),
+        bdd_cases: step.bdd_cases || ''
+      })
+      setExecutorData({
+        type: executor.type || '',
+        identifier: executor.identifier || '',
+        metadata: executor.metadata || {}
       })
       setIsEditing(true)
     }
@@ -62,8 +76,14 @@ export function StepPanel({ step, isOpen, onClose, onUpdate, onDelete }: StepPan
       if (step.description !== formData.description.trim()) {
         changes.push({ field: 'description', old: step.description, new: formData.description.trim() })
       }
-      if (step.microservice !== formData.microservice.trim()) {
-        changes.push({ field: 'microservice', old: step.microservice, new: formData.microservice.trim() })
+      if (executor.type !== executorData.type) {
+        changes.push({ field: 'executor.type', old: executor.type, new: executorData.type })
+      }
+      if (executor.identifier !== executorData.identifier) {
+        changes.push({ field: 'executor.identifier', old: executor.identifier, new: executorData.identifier })
+      }
+      if (JSON.stringify(executor.metadata) !== JSON.stringify(executorData.metadata)) {
+        changes.push({ field: 'executor.metadata', old: JSON.stringify(executor.metadata), new: JSON.stringify(executorData.metadata) })
       }
       if (step.functional_description !== formData.functional_description.trim()) {
         changes.push({ field: 'functional_description', old: step.functional_description, new: formData.functional_description.trim() })
@@ -78,7 +98,11 @@ export function StepPanel({ step, isOpen, onClose, onUpdate, onDelete }: StepPan
       const updatedStep = await updateStep(step.$id, {
         name: formData.name.trim(),
         description: formData.description.trim(),
-        microservice: formData.microservice.trim(),
+        executor: {
+          type: executorData.type,
+          identifier: executorData.identifier,
+          metadata: executorData.metadata
+        },
         functional_description: formData.functional_description.trim(),
         links: formData.links.trim(),
         bdd_cases: formData.bdd_cases.trim()
@@ -110,7 +134,7 @@ export function StepPanel({ step, isOpen, onClose, onUpdate, onDelete }: StepPan
 
     try {
       // Registrar la eliminación antes de borrar
-      await logStepDeleted(step.flow_id, step.name, step.microservice)
+      await logStepDeleted(step.flow_id, step.name, executor.identifier)
 
       await deleteStep(step.$id)
 
@@ -152,19 +176,6 @@ export function StepPanel({ step, isOpen, onClose, onUpdate, onDelete }: StepPan
                   step.name
                 )}
               </SheetTitle>
-              <div className="mt-2">
-                {isEditing ? (
-                  <Input
-                    value={formData.microservice}
-                    onChange={(e) => setFormData({ ...formData, microservice: e.target.value })}
-                    placeholder="Microservice name"
-                  />
-                ) : (
-                  <Badge variant="outline" className="bg-blue-50 text-blue-700 border-blue-200">
-                    {step.microservice}
-                  </Badge>
-                )}
-              </div>
             </div>
             <div className="flex items-center gap-2 ml-4">
               {!isEditing && (
@@ -195,110 +206,125 @@ export function StepPanel({ step, isOpen, onClose, onUpdate, onDelete }: StepPan
               )}
             </div>
           </div>
-          <SheetDescription className="text-left">
-            Step details and associated microservice information
-          </SheetDescription>
+          
         </SheetHeader>
+        
 
         <div className="flex-1 overflow-y-auto py-6">
           <div className="space-y-6 pr-2">
-          <div>
-            <Label className="text-sm font-medium text-slate-700">Description</Label>
-            {isEditing ? (
-              <Textarea
-                value={formData.description}
-                onChange={(e) => setFormData({ ...formData, description: e.target.value })}
-                placeholder="Enter step description"
-                className="mt-2"
-                rows={3}
-              />
-            ) : (
-              <p className="mt-2 text-sm text-slate-600">
-                {step.description || 'No description provided'}
-              </p>
-            )}
-          </div>
+            <div>
+              <Label className="text-sm font-medium text-slate-700">Description</Label>
+              {isEditing ? (
+                <Textarea
+                  value={formData.description}
+                  onChange={(e) => setFormData({ ...formData, description: e.target.value })}
+                  placeholder="Enter step description"
+                  className="mt-2"
+                  rows={3}
+                />
+              ) : (
+                <p className="mt-2 text-sm text-slate-600">
+                  {step.description || 'No description provided'}
+                </p>
+              )}
+            </div>
 
-          <Separator />
+            <Separator />
 
-          <div>
-            <Label className="text-sm font-medium text-slate-700">Functional Requirements</Label>
-            {isEditing ? (
-              <Textarea
-                value={formData.functional_description}
-                onChange={(e) => setFormData({ ...formData, functional_description: e.target.value })}
-                placeholder="Enter functional requirements"
-                className="mt-2"
-                rows={4}
-              />
-            ) : (
-              <p className="mt-2 text-sm text-slate-600">
-                {step.functional_description || 'No functional requirements provided'}
-              </p>
-            )}
-          </div>
+            <div>
+              <Label className="text-sm font-medium text-slate-700">Functional Requirements</Label>
+              {isEditing ? (
+                <Textarea
+                  value={formData.functional_description}
+                  onChange={(e) => setFormData({ ...formData, functional_description: e.target.value })}
+                  placeholder="Enter functional requirements"
+                  className="mt-2"
+                  rows={4}
+                />
+              ) : (
+                <p className="mt-2 text-sm text-slate-600">
+                  {step.functional_description || 'No functional requirements provided'}
+                </p>
+              )}
+            </div>
 
-          <Separator />
+            <Separator />
 
-          <div>
-            <Label className="text-sm font-medium text-slate-700">BDD Test Cases</Label>
-            {isEditing ? (
-              <Textarea
-                value={formData.bdd_cases}
-                onChange={(e) => setFormData({ ...formData, bdd_cases: e.target.value })}
-                placeholder="Given... When... Then..."
-                className="mt-2 font-mono text-sm"
-                rows={6}
-              />
-            ) : (
+            <div>
+              <Label className="text-sm font-medium text-slate-700">BDD Test Cases</Label>
+              {isEditing ? (
+                <Textarea
+                  value={formData.bdd_cases}
+                  onChange={(e) => setFormData({ ...formData, bdd_cases: e.target.value })}
+                  placeholder="Given... When... Then..."
+                  className="mt-2 font-mono text-sm"
+                  rows={6}
+                />
+              ) : (
+                <div className="mt-2">
+                  {step.bdd_cases ? (
+                    <pre className="text-sm text-slate-600 bg-slate-50 p-3 rounded-md whitespace-pre-wrap font-mono">
+                      {step.bdd_cases}
+                    </pre>
+                  ) : (
+                    <p className="text-sm text-slate-500">No BDD test cases provided</p>
+                  )}
+                </div>
+              )}
+            </div>
+
+            <Separator />
+
+            <div>
+              <Label className="text-sm font-medium text-slate-700">Related Links</Label>
+              {isEditing ? (
+                <Textarea
+                  value={formData.links}
+                  onChange={(e) => setFormData({ ...formData, links: e.target.value })}
+                  placeholder='[{"type":"docs","url":"https://...","title":"Documentation"}]'
+                  className="mt-2"
+                  rows={3}
+                />
+              ) : (
+                <div className="mt-2 space-y-2">
+                  {links.length > 0 ? (
+                    links.map((link, index) => (
+                      <a
+                        key={index}
+                        href={link.url}
+                        target="_blank"
+                        rel="noopener noreferrer"
+                        className="flex items-center gap-2 text-sm text-blue-600 hover:text-blue-800 p-2 bg-blue-50 rounded-md hover:bg-blue-100 transition-colors"
+                      >
+                        <ExternalLink className="w-4 h-4" />
+                        <span>{link.title}</span>
+                        <Badge variant="outline" className="ml-auto text-xs">
+                          {link.type}
+                        </Badge>
+                      </a>
+                    ))
+                  ) : (
+                    <p className="text-sm text-slate-500">No links provided</p>
+                  )}
+                </div>
+              )}
+            </div>
+
+            <Separator />
+
+            <div>
               <div className="mt-2">
-                {step.bdd_cases ? (
-                  <pre className="text-sm text-slate-600 bg-slate-50 p-3 rounded-md whitespace-pre-wrap font-mono">
-                    {step.bdd_cases}
-                  </pre>
-                ) : (
-                  <p className="text-sm text-slate-500">No BDD test cases provided</p>
-                )}
+                <ExecutorForm
+                  executor={isEditing ? executorData : {
+                    ...executor,
+                    metadata: executor.metadata as Record<string, string>
+                  }}
+                  isEditing={isEditing}
+                  onChange={setExecutorData}
+                />
               </div>
-            )}
-          </div>
+            </div>
 
-          <Separator />
-
-          <div>
-            <Label className="text-sm font-medium text-slate-700">Related Links</Label>
-            {isEditing ? (
-              <Textarea
-                value={formData.links}
-                onChange={(e) => setFormData({ ...formData, links: e.target.value })}
-                placeholder='[{"type":"docs","url":"https://...","title":"Documentation"}]'
-                className="mt-2"
-                rows={3}
-              />
-            ) : (
-              <div className="mt-2 space-y-2">
-                {links.length > 0 ? (
-                  links.map((link, index) => (
-                    <a
-                      key={index}
-                      href={link.url}
-                      target="_blank"
-                      rel="noopener noreferrer"
-                      className="flex items-center gap-2 text-sm text-blue-600 hover:text-blue-800 p-2 bg-blue-50 rounded-md hover:bg-blue-100 transition-colors"
-                    >
-                      <ExternalLink className="w-4 h-4" />
-                      <span>{link.title}</span>
-                      <Badge variant="outline" className="ml-auto text-xs">
-                        {link.type}
-                      </Badge>
-                    </a>
-                  ))
-                ) : (
-                  <p className="text-sm text-slate-500">No links provided</p>
-                )}
-              </div>
-            )}
-          </div>
           </div>
         </div>
 

@@ -23,7 +23,11 @@ export interface Step {
   name: string
   description: string
   flow_id: string
-  microservice: string
+  executor: {
+    type: string
+    identifier: string
+    metadata: object
+  }
   order: number
   functional_description: string
   links: string

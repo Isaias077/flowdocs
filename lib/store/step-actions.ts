@@ -36,10 +36,10 @@ export const createStepSlice: StateCreator<
         name: doc.name,
         description: doc.description,
         flow_id: doc.flow_id,
-        microservice: doc.microservice,
+        executor: typeof doc.executor === 'string' ? JSON.parse(doc.executor) : doc.executor || { type: '', identifier: '', metadata: {} },
         order: doc.order,
         functional_description: doc.functional_description,
-        links: doc.links,
+        links: typeof doc.links === 'string' ? JSON.parse(doc.links) : doc.links || [],
         bdd_cases: doc.bdd_cases,
         $createdAt: doc.$createdAt,
         $updatedAt: doc.$updatedAt
@@ -60,47 +60,46 @@ export const createStepSlice: StateCreator<
     }
   },
 
-  createStep: async (stepData) => {
-    set((state) => ({
-      loading: { ...state.loading, isLoading: true, error: null }
-    }))
-
+  createStep: async (step: Omit<Step, '$id' | '$createdAt' | '$updatedAt'>) => {
     try {
-      const response: any = await databases.createDocument(
+      const response = await databases.createDocument(
         DATABASE_ID,
         COLLECTIONS.STEPS,
         ID.unique(),
-        stepData
+        {
+          name: step.name,
+          description: step.description,
+          executor: JSON.stringify(step.executor),
+          functional_description: step.functional_description,
+          bdd_cases: step.bdd_cases,
+          flow_id: step.flow_id,
+          order: step.order,
+          links: JSON.stringify(step.links)
+        }
       )
-
+      
       const newStep: Step = {
         $id: response.$id,
         name: response.name,
         description: response.description,
         flow_id: response.flow_id,
-        microservice: response.microservice,
+        executor: typeof response.executor === 'string' ? JSON.parse(response.executor) : response.executor || { type: '', identifier: '', metadata: {} },
         order: response.order,
         functional_description: response.functional_description,
-        links: response.links,
+        links: typeof response.links === 'string' ? JSON.parse(response.links) : response.links || [],
         bdd_cases: response.bdd_cases,
         $createdAt: response.$createdAt,
         $updatedAt: response.$updatedAt
       }
-
-      set((state) => ({
-        steps: [...state.steps, newStep],
-        loading: { isLoading: false, error: null }
+      
+      set((state) => ({ 
+        ...state, 
+        steps: [...state.steps, newStep] 
       }))
-
+      
       return newStep
     } catch (error) {
-      set((state) => ({
-        loading: {
-          ...state.loading,
-          isLoading: false,
-          error: error instanceof Error ? error.message : 'Error al crear step'
-        }
-      }))
+      console.error('Error creating step:', error)
       throw error
     }
   },
@@ -119,10 +118,10 @@ export const createStepSlice: StateCreator<
           name: updates.name,
           description: updates.description,
           flow_id: updates.flow_id,
-          microservice: updates.microservice,
+          executor: typeof updates.executor === 'object' ? JSON.stringify(updates.executor) : updates.executor,
           order: updates.order,
           functional_description: updates.functional_description,
-          links: updates.links,
+          links: typeof updates.links === 'object' ? JSON.stringify(updates.links) : updates.links,
           bdd_cases: updates.bdd_cases
         }
       )
@@ -132,10 +131,10 @@ export const createStepSlice: StateCreator<
         name: response.name,
         description: response.description,
         flow_id: response.flow_id,
-        microservice: response.microservice,
+        executor: typeof response.executor === 'string' ? JSON.parse(response.executor) : response.executor || { type: '', identifier: '', metadata: {} },
         order: response.order,
         functional_description: response.functional_description,
-        links: response.links,
+        links: typeof response.links === 'string' ? JSON.parse(response.links) : response.links || [],
         bdd_cases: response.bdd_cases,
         $createdAt: response.$createdAt,
         $updatedAt: response.$updatedAt

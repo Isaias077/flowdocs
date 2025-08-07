@@ -13,29 +13,33 @@ interface StepNodeProps extends NodeProps {
   }
 }
 
-const getServiceIcon = (service: string) => {
-  const lowerService = service.toLowerCase()
-  if (lowerService.includes('api') || lowerService.includes('backend')) {
+const getServiceIcon = (identifier?: string) => {
+  if (!identifier) return <Cpu className="w-4 h-4" />
+  
+  const lowerIdentifier = identifier.toLowerCase()
+  if (lowerIdentifier.includes('api') || lowerIdentifier.includes('backend')) {
     return <Server className="w-4 h-4" />
   }
-  if (lowerService.includes('database') || lowerService.includes('db')) {
+  if (lowerIdentifier.includes('database') || lowerIdentifier.includes('db')) {
     return <Database className="w-4 h-4" />
   }
-  if (lowerService.includes('frontend') || lowerService.includes('ui')) {
+  if (lowerIdentifier.includes('frontend') || lowerIdentifier.includes('ui')) {
     return <Globe className="w-4 h-4" />
   }
   return <Cpu className="w-4 h-4" />
 }
 
-const getServiceColor = (service: string) => {
-  const lowerService = service.toLowerCase()
-  if (lowerService.includes('api') || lowerService.includes('backend')) {
+const getServiceColor = (identifier?: string) => {
+  if (!identifier) return 'bg-slate-100 text-slate-700 border-slate-200'
+  
+  const lowerIdentifier = identifier.toLowerCase()
+  if (lowerIdentifier.includes('api') || lowerIdentifier.includes('backend')) {
     return 'bg-blue-100 text-blue-700 border-blue-200'
   }
-  if (lowerService.includes('database') || lowerService.includes('db')) {
+  if (lowerIdentifier.includes('database') || lowerIdentifier.includes('db')) {
     return 'bg-green-100 text-green-700 border-green-200'
   }
-  if (lowerService.includes('frontend') || lowerService.includes('ui')) {
+  if (lowerIdentifier.includes('frontend') || lowerIdentifier.includes('ui')) {
     return 'bg-purple-100 text-purple-700 border-purple-200'
   }
   return 'bg-slate-100 text-slate-700 border-slate-200'
@@ -43,6 +47,9 @@ const getServiceColor = (service: string) => {
 
 export function StepNode({ data }: StepNodeProps) {
   const { step, onClick } = data
+  
+  // Asegurar que executor tenga un valor por defecto
+  const executorIdentifier = step.executor?.identifier
 
   return (
     <>
@@ -60,15 +67,15 @@ export function StepNode({ data }: StepNodeProps) {
               {step.name}
             </h3>
             <div className="ml-2 text-slate-400">
-              {getServiceIcon(step.microservice)}
+              {getServiceIcon(executorIdentifier)}
             </div>
           </div>
           
           <Badge 
             variant="outline" 
-            className={`text-xs mb-2 ${getServiceColor(step.microservice)}`}
+            className={`text-xs mb-2 ${getServiceColor(executorIdentifier)}`}
           >
-            {step.microservice}
+            {executorIdentifier || 'Unknown'}
           </Badge>
           
           {step.description && (
