@@ -11,7 +11,7 @@ import { Separator } from '@/components/ui/separator'
 import { AlertDialog, AlertDialogAction, AlertDialogCancel, AlertDialogContent, AlertDialogDescription, AlertDialogFooter, AlertDialogHeader, AlertDialogTitle, AlertDialogTrigger } from '@/components/ui/alert-dialog'
 import { X, Edit2, Trash2, ExternalLink, Plus } from 'lucide-react'
 import { Step, Link } from '@/types'
-import { databases, DATABASE_ID, COLLECTIONS } from '@/lib/appwrite'
+import { useStepActions } from '@/lib/store'
 import { useChangelog } from '@/hooks/use-changelog'
 import { toast } from 'sonner'
 
@@ -26,6 +26,7 @@ interface StepPanelProps {
 export function StepPanel({ step, isOpen, onClose, onUpdate, onDelete }: StepPanelProps) {
   const [isEditing, setIsEditing] = useState(false)
   const { logStepUpdated, logStepDeleted } = useChangelog()
+  const { updateStep, deleteStep } = useStepActions()
   const [formData, setFormData] = useState({
     name: '',
     description: '',
@@ -74,19 +75,14 @@ export function StepPanel({ step, isOpen, onClose, onUpdate, onDelete }: StepPan
         changes.push({ field: 'bdd_cases', old: step.bdd_cases, new: formData.bdd_cases.trim() })
       }
 
-      const updatedStep: unknown = await databases.updateDocument(
-        DATABASE_ID,
-        COLLECTIONS.STEPS,
-        step.$id,
-        {
-          name: formData.name.trim(),
-          description: formData.description.trim(),
-          microservice: formData.microservice.trim(),
-          functional_description: formData.functional_description.trim(),
-          links: formData.links.trim(),
-          bdd_cases: formData.bdd_cases.trim()
-        }
-      )
+      const updatedStep = await updateStep(step.$id, {
+        name: formData.name.trim(),
+        description: formData.description.trim(),
+        microservice: formData.microservice.trim(),
+        functional_description: formData.functional_description.trim(),
+        links: formData.links.trim(),
+        bdd_cases: formData.bdd_cases.trim()
+      })
 
       // Registrar cada cambio en el historial
       for (const change of changes) {
@@ -100,7 +96,7 @@ export function StepPanel({ step, isOpen, onClose, onUpdate, onDelete }: StepPan
         )
       }
 
-      onUpdate(updatedStep as unknown as Step)
+      onUpdate(updatedStep)
       setIsEditing(false)
       toast.success('Step updated successfully')
     } catch (error) {
@@ -116,11 +112,7 @@ export function StepPanel({ step, isOpen, onClose, onUpdate, onDelete }: StepPan
       // Registrar la eliminación antes de borrar
       await logStepDeleted(step.flow_id, step.name, step.microservice)
 
-      await databases.deleteDocument(
-        DATABASE_ID,
-        COLLECTIONS.STEPS,
-        step.$id
-      )
+      await deleteStep(step.$id)
 
       onDelete(step.$id)
       onClose()

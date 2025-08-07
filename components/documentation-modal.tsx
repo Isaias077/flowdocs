@@ -13,7 +13,7 @@ import { Separator } from '@/components/ui/separator'
 import { AlertDialog, AlertDialogAction, AlertDialogCancel, AlertDialogContent, AlertDialogDescription, AlertDialogFooter, AlertDialogHeader, AlertDialogTitle, AlertDialogTrigger } from '@/components/ui/alert-dialog'
 import { FileText, Plus, ExternalLink, Trash2, Edit2 } from 'lucide-react'
 import { DocumentationLink } from '@/types'
-import { databases, DATABASE_ID, COLLECTIONS } from '@/lib/appwrite'
+import { useProjectActions } from '@/lib/store'
 import { toast } from 'sonner'
 
 interface DocumentationModalProps {
@@ -23,6 +23,7 @@ interface DocumentationModalProps {
 }
 
 export function DocumentationModal({ projectId, documentationLinks, onUpdate }: DocumentationModalProps) {
+  const { updateProject } = useProjectActions()
   const [isOpen, setIsOpen] = useState(false)
   const [isAddingLink, setIsAddingLink] = useState(false)
   const [editingIndex, setEditingIndex] = useState<number | null>(null)
@@ -85,14 +86,9 @@ export function DocumentationModal({ projectId, documentationLinks, onUpdate }: 
 
   const saveLinks = async (updatedLinks: DocumentationLink[]) => {
     try {
-      await databases.updateDocument(
-        DATABASE_ID,
-        COLLECTIONS.PROJECTS,
-        projectId,
-        {
-          documentation_links: JSON.stringify(updatedLinks)
-        }
-      )
+      await updateProject(projectId, {
+        documentation_links: JSON.stringify(updatedLinks)
+      })
 
       onUpdate(JSON.stringify(updatedLinks))
       toast.success('Documentation links updated')

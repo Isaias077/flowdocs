@@ -5,10 +5,8 @@ import { Button } from '@/components/ui/button'
 import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle, DialogTrigger } from '@/components/ui/dialog'
 import { ScrollArea } from '@/components/ui/scroll-area'
 import { Badge } from '@/components/ui/badge'
-import { Separator } from '@/components/ui/separator'
 import { History, GitCommit, Plus, Edit, Trash2, FileText } from 'lucide-react'
-import { FlowChangeLog } from '@/types'
-import { databases, DATABASE_ID, COLLECTIONS, Query } from '@/lib/appwrite'
+import { useChangeLogActions, useChangeLogs, useChangeLogsLoading } from '@/lib/store'
 import { toast } from 'sonner'
 import { formatDistanceToNow } from 'date-fns'
 import { es } from 'date-fns/locale'
@@ -18,28 +16,17 @@ interface FlowChangelogProps {
 }
 
 export function FlowChangelog({ flowId }: FlowChangelogProps) {
+  const { fetchChangeLogs } = useChangeLogActions()
+  const changeLogs = useChangeLogs()
+  const loading = useChangeLogsLoading()
   const [isOpen, setIsOpen] = useState(false)
-  const [changelog, setChangelog] = useState<FlowChangeLog[]>([])
-  const [isLoading, setIsLoading] = useState(false)
 
   const fetchChangelog = async () => {
-    setIsLoading(true)
     try {
-      const response = await databases.listDocuments(
-        DATABASE_ID,
-        COLLECTIONS.FLOW_CHANGELOG,
-        [
-          Query.equal('flow_id', flowId),
-          Query.orderDesc('$createdAt'),
-          Query.limit(100)
-        ]
-      )
-      setChangelog(response.documents as unknown as FlowChangeLog[])
+      await fetchChangeLogs(flowId)
     } catch (error) {
       toast.error('Error al cargar el historial de cambios')
       console.error('Error fetching changelog:', error)
-    } finally {
-      setIsLoading(false)
     }
   }
 
@@ -114,14 +101,14 @@ export function FlowChangelog({ flowId }: FlowChangelogProps) {
         </DialogHeader>
         
         <ScrollArea className="flex-1 pr-4 modal-scroll overflow-x-auto">
-          {isLoading ? (
+          {loading.isLoading ? (
             <div className="flex items-center justify-center py-8">
               <div className="text-center">
                 <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-blue-600 mx-auto mb-4"></div>
                 <p className="text-sm text-slate-500">Cargando historial...</p>
               </div>
             </div>
-          ) : changelog.length === 0 ? (
+          ) : changeLogs.length === 0 ? (
             <div className="flex items-center justify-center py-8">
               <div className="text-center">
                 <History className="w-16 h-16 text-slate-400 mx-auto mb-4" />
@@ -133,10 +120,10 @@ export function FlowChangelog({ flowId }: FlowChangelogProps) {
             </div>
           ) : (
             <div className="space-y-4 min-w-[600px]">
-              {changelog.map((change, index) => (
+              {changeLogs.map((change: any, index: any) => (
                 <div key={change.$id} className="relative">
                   {/* Timeline line */}
-                  {index < changelog.length - 1 && (
+                  {index < changeLogs.length - 1 && (
                     <div className="absolute left-6 top-12 w-0.5 h-full bg-slate-200"></div>
                   )}
                   

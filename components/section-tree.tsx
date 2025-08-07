@@ -14,7 +14,7 @@ import { Collapsible, CollapsibleContent, CollapsibleTrigger } from '@/component
 import { ChevronDown, ChevronRight, Folder, FolderOpen, Plus, MoreHorizontal, Edit2, Trash2, GitBranch } from 'lucide-react'
 import { Section, Flow } from '@/types'
 import { FlowCard } from './flow-card'
-import { databases, DATABASE_ID, COLLECTIONS, ID } from '@/lib/appwrite'
+import { useSectionActions, useFlowActions } from '@/lib/store'
 import { toast } from 'sonner'
 
 interface SectionTreeProps {
@@ -74,6 +74,9 @@ function SectionNode({
     status: 'draft' as Flow['status']
   })
 
+  const { updateSection, deleteSection, createSection } = useSectionActions()
+  const { createFlow, deleteFlow } = useFlowActions()
+
   const sectionFlows = flows.filter(flow => flow.section_id === section.$id)
   const childSections = subsections.filter(sub => sub.parent_section_id === section.$id)
 
@@ -86,15 +89,10 @@ function SectionNode({
     }
 
     try {
-      const updatedSection: unknown = await databases.updateDocument(
-        DATABASE_ID,
-        COLLECTIONS.SECTIONS,
-        section.$id,
-        {
-          name: editFormData.name.trim(),
-          description: editFormData.description.trim()
-        }
-      )
+      const updatedSection = await updateSection(section.$id, {
+        name: editFormData.name.trim(),
+        description: editFormData.description.trim()
+      })
 
       onSectionUpdate(updatedSection as unknown as Section)
       setIsEditDialogOpen(false)
@@ -116,20 +114,15 @@ function SectionNode({
     try {
       const nextOrder = Math.max(...subsections.map(s => s.order), 0) + 1
 
-      const newSection: unknown = await databases.createDocument(
-        DATABASE_ID,
-        COLLECTIONS.SECTIONS,
-        ID.unique(),
-        {
-          name: subsectionFormData.name.trim(),
-          description: subsectionFormData.description.trim(),
-          project_id: projectId,
-          parent_section_id: section.$id,
-          order: nextOrder
-        }
-      )
+      const newSection = await createSection({
+        name: subsectionFormData.name.trim(),
+        description: subsectionFormData.description.trim(),
+        project_id: projectId,
+        parent_section_id: section.$id,
+        order: nextOrder
+      })
 
-      onSectionCreate(newSection as unknown as Section)
+      onSectionCreate(newSection)
       setSubsectionFormData({ name: '', description: '' })
       setIsSubsectionDialogOpen(false)
       toast.success('Subsection created successfully')
@@ -148,20 +141,15 @@ function SectionNode({
     }
 
     try {
-      const newFlow: unknown = await databases.createDocument(
-        DATABASE_ID,
-        COLLECTIONS.FLOWS,
-        ID.unique(),
-        {
-          name: flowFormData.name.trim(),
-          description: flowFormData.description.trim(),
-          project_id: projectId,
-          section_id: section.$id,
-          status: flowFormData.status
-        }
-      )
+      const newFlow = await createFlow({
+        name: flowFormData.name.trim(),
+        description: flowFormData.description.trim(),
+        project_id: projectId,
+        section_id: section.$id,
+        status: flowFormData.status
+      })
 
-      onFlowCreate(newFlow as unknown as Flow)
+      onFlowCreate(newFlow)
       setFlowFormData({ name: '', description: '', status: 'draft' })
       setIsFlowDialogOpen(false)
       toast.success('Flow created successfully')
@@ -194,29 +182,17 @@ function SectionNode({
       
       // Delete flows first
       for (const flow of flowsToDelete) {
-        await databases.deleteDocument(
-          DATABASE_ID,
-          COLLECTIONS.FLOWS,
-          flow.$id
-        )
+        await deleteFlow(flow.$id)
       }
 
       // Delete subsections (in reverse order to handle nested sections)
       const sectionsToDelete = allSectionIdsToDelete.filter(id => id !== section.$id)
       for (const sectionId of sectionsToDelete.reverse()) {
-        await databases.deleteDocument(
-          DATABASE_ID,
-          COLLECTIONS.SECTIONS,
-          sectionId
-        )
+        await deleteSection(sectionId)
       }
 
       // Finally delete the main section
-      await databases.deleteDocument(
-        DATABASE_ID,
-        COLLECTIONS.SECTIONS,
-        section.$id
-      )
+      await deleteSection(section.$id)
 
       onSectionDelete(section.$id)
       

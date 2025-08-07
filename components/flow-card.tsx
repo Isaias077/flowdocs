@@ -15,7 +15,7 @@ import { AlertDialog, AlertDialogAction, AlertDialogCancel, AlertDialogContent, 
 import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuTrigger } from '@/components/ui/dropdown-menu'
 import { GitBranch, MoreHorizontal, Edit2, Trash2 } from 'lucide-react'
 import { Flow, Section } from '@/types'
-import { databases, DATABASE_ID, COLLECTIONS, ID } from '@/lib/appwrite'
+import { useFlowActions } from '@/lib/store'
 import { toast } from 'sonner'
 
 interface FlowCardProps {
@@ -28,6 +28,7 @@ interface FlowCardProps {
 
 export function FlowCard({ flow, projectId, sections = [], onUpdate, onDelete }: FlowCardProps) {
   const router = useRouter()
+  const { updateFlow, deleteFlow } = useFlowActions()
   const [isEditDialogOpen, setIsEditDialogOpen] = useState(false)
   const [formData, setFormData] = useState({
     name: flow.name,
@@ -45,19 +46,14 @@ export function FlowCard({ flow, projectId, sections = [], onUpdate, onDelete }:
     }
 
     try {
-      const updatedFlow: unknown = await databases.updateDocument(
-        DATABASE_ID,
-        COLLECTIONS.FLOWS,
-        flow.$id,
-        {
-          name: formData.name.trim(),
-          description: formData.description.trim(),
-          section_id: formData.section_id || null,
-          status: formData.status
-        }
-      )
+      const updatedFlow = await updateFlow(flow.$id, {
+        name: formData.name.trim(),
+        description: formData.description.trim(),
+        section_id: formData.section_id || null,
+        status: formData.status
+      })
 
-      onUpdate(updatedFlow as unknown as Flow)
+      onUpdate(updatedFlow)
       setIsEditDialogOpen(false)
       toast.success('Flow updated successfully')
     } catch (error) {
@@ -68,12 +64,7 @@ export function FlowCard({ flow, projectId, sections = [], onUpdate, onDelete }:
 
   const handleDelete = async () => {
     try {
-      await databases.deleteDocument(
-        DATABASE_ID,
-        COLLECTIONS.FLOWS,
-        flow.$id
-      )
-
+      await deleteFlow(flow.$id)
       onDelete(flow.$id)
       toast.success('Flow deleted successfully')
     } catch (error) {

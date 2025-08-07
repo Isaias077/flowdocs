@@ -11,7 +11,7 @@ import { AlertDialog, AlertDialogAction, AlertDialogCancel, AlertDialogContent, 
 import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuTrigger } from '@/components/ui/dropdown-menu'
 import { MoreHorizontal, Edit2, Trash2 } from 'lucide-react'
 import { Project } from '@/types'
-import { databases, DATABASE_ID, COLLECTIONS } from '@/lib/appwrite'
+import { useProjectActions } from '@/lib/store'
 import { toast } from 'sonner'
 
 interface ProjectActionsProps {
@@ -21,7 +21,9 @@ interface ProjectActionsProps {
 
 export function ProjectActions({ project, onUpdate }: ProjectActionsProps) {
   const router = useRouter()
+  const { updateProject, deleteProject } = useProjectActions()
   const [isEditDialogOpen, setIsEditDialogOpen] = useState(false)
+  const [isLoading, setIsLoading] = useState(false)
   const [formData, setFormData] = useState({
     name: project.name,
     description: project.description
@@ -35,39 +37,35 @@ export function ProjectActions({ project, onUpdate }: ProjectActionsProps) {
       return
     }
 
+    setIsLoading(true)
     try {
-      const updatedProject: unknown = await databases.updateDocument(
-        DATABASE_ID,
-        COLLECTIONS.PROJECTS,
-        project.$id,
-        {
-          name: formData.name.trim(),
-          description: formData.description.trim()
-        }
-      )
+      const updatedProject = await updateProject(project.$id, {
+        name: formData.name.trim(),
+        description: formData.description.trim()
+      })
 
-      onUpdate(updatedProject as Project)
+      onUpdate(updatedProject)
       setIsEditDialogOpen(false)
       toast.success('Project updated successfully')
     } catch (error) {
       toast.error('Failed to update project')
       console.error('Error updating project:', error)
+    } finally {
+      setIsLoading(false)
     }
   }
 
   const handleDelete = async () => {
+    setIsLoading(true)
     try {
-      await databases.deleteDocument(
-        DATABASE_ID,
-        COLLECTIONS.PROJECTS,
-        project.$id
-      )
-
+      await deleteProject(project.$id)
       toast.success('Project deleted successfully')
       router.push('/projects')
     } catch (error) {
       toast.error('Failed to delete project')
       console.error('Error deleting project:', error)
+    } finally {
+      setIsLoading(false)
     }
   }
 
@@ -108,8 +106,8 @@ export function ProjectActions({ project, onUpdate }: ProjectActionsProps) {
               </AlertDialogHeader>
               <AlertDialogFooter>
                 <AlertDialogCancel>Cancel</AlertDialogCancel>
-                <AlertDialogAction onClick={handleDelete} className="bg-red-600 hover:bg-red-700">
-                  Delete Project
+                <AlertDialogAction onClick={handleDelete} className="bg-red-600 hover:bg-red-700" disabled={isLoading}>
+                  {isLoading ? 'Deleting...' : 'Delete Project'}
                 </AlertDialogAction>
               </AlertDialogFooter>
             </AlertDialogContent>
@@ -149,10 +147,12 @@ export function ProjectActions({ project, onUpdate }: ProjectActionsProps) {
               </div>
             </div>
             <DialogFooter>
-              <Button type="button" variant="outline" onClick={() => setIsEditDialogOpen(false)}>
+              <Button type="button" variant="outline" onClick={() => setIsEditDialogOpen(false)} disabled={isLoading}>
                 Cancel
               </Button>
-              <Button type="submit">Save Changes</Button>
+              <Button type="submit" disabled={isLoading}>
+                {isLoading ? 'Saving...' : 'Save Changes'}
+              </Button>
             </DialogFooter>
           </form>
         </DialogContent>

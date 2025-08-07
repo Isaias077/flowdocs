@@ -11,18 +11,20 @@ import { AlertDialog, AlertDialogAction, AlertDialogCancel, AlertDialogContent, 
 import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuTrigger } from '@/components/ui/dropdown-menu'
 import { MoreHorizontal, Edit2, Trash2 } from 'lucide-react'
 import { Flow } from '@/types'
-import { databases, DATABASE_ID, COLLECTIONS } from '@/lib/appwrite'
+import { useFlowActions } from '@/lib/store'
 import { toast } from 'sonner'
 
 interface FlowActionsProps {
   flow: Flow
   projectId: string
-  onUpdate: (flow: Flow) => void
+  onUpdate?: (flow: Flow) => void
 }
 
 export function FlowActions({ flow, projectId, onUpdate }: FlowActionsProps) {
   const router = useRouter()
+  const { updateFlow, deleteFlow } = useFlowActions()
   const [isEditDialogOpen, setIsEditDialogOpen] = useState(false)
+  const [isLoading, setIsLoading] = useState(false)
   const [formData, setFormData] = useState({
     name: flow.name,
     description: flow.description
@@ -36,39 +38,37 @@ export function FlowActions({ flow, projectId, onUpdate }: FlowActionsProps) {
       return
     }
 
+    setIsLoading(true)
     try {
-      const updatedFlow: unknown = await databases.updateDocument(
-        DATABASE_ID,
-        COLLECTIONS.FLOWS,
-        flow.$id,
-        {
-          name: formData.name.trim(),
-          description: formData.description.trim()
-        }
-      )
+      const updatedFlow = await updateFlow(flow.$id, {
+        name: formData.name.trim(),
+        description: formData.description.trim()
+      })
 
-      onUpdate(updatedFlow as unknown as Flow)
-      setIsEditDialogOpen(false)
-      toast.success('Flow updated successfully')
+      if (updatedFlow) {
+        onUpdate?.(updatedFlow)
+        setIsEditDialogOpen(false)
+        toast.success('Flow updated successfully')
+      }
     } catch (error) {
       toast.error('Failed to update flow')
       console.error('Error updating flow:', error)
+    } finally {
+      setIsLoading(false)
     }
   }
 
   const handleDelete = async () => {
+    setIsLoading(true)
     try {
-      await databases.deleteDocument(
-        DATABASE_ID,
-        COLLECTIONS.FLOWS,
-        flow.$id
-      )
-
+      await deleteFlow(flow.$id)
       toast.success('Flow deleted successfully')
       router.push(`/projects/${projectId}`)
     } catch (error) {
       toast.error('Failed to delete flow')
       console.error('Error deleting flow:', error)
+    } finally {
+      setIsLoading(false)
     }
   }
 
@@ -84,7 +84,7 @@ export function FlowActions({ flow, projectId, onUpdate }: FlowActionsProps) {
     <>
       <DropdownMenu>
         <DropdownMenuTrigger asChild>
-          <Button variant="outline" size="sm">
+          <Button variant="outline" size="sm" disabled={isLoading}>
             <MoreHorizontal className="w-4 h-4" />
           </Button>
         </DropdownMenuTrigger>
@@ -159,10 +159,12 @@ export function FlowActions({ flow, projectId, onUpdate }: FlowActionsProps) {
               </div>
             </div>
             <DialogFooter>
-              <Button type="button" variant="outline" onClick={() => setIsEditDialogOpen(false)}>
+              <Button type="button" variant="outline" onClick={() => setIsEditDialogOpen(false)} disabled={isLoading}>
                 Cancel
               </Button>
-              <Button type="submit">Save Changes</Button>
+              <Button type="submit" disabled={isLoading}>
+                {isLoading ? 'Saving...' : 'Save Changes'}
+              </Button>
             </DialogFooter>
           </form>
         </DialogContent>
