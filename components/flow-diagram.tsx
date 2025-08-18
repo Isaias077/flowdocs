@@ -29,24 +29,33 @@ export function FlowDiagram({ steps, onNodeClick }: FlowDiagramProps) {
   const [nodes, setNodes, onNodesChange] = useNodesState([])
   const [edges, setEdges, onEdgesChange] = useEdgesState([])
 
+  useEffect(() => {
+    console.log('[Perf] FlowDiagram mount')
+    return () => {
+      console.log('[Perf] FlowDiagram unmount')
+    }
+  }, [])
+
   const onConnect = useCallback(
     (params: Connection) => setEdges((eds) => addEdge(params, eds)),
     [setEdges]
   )
 
   useEffect(() => {
+    const t0 = typeof performance !== 'undefined' && (performance as any).now ? performance.now() : Date.now()
+
     // Convert steps to nodes and edges
-    const newNodes: Node[] = steps
-      .sort((a, b) => a.order - b.order)  
-      .map((step, index) => ({
-        id: step.$id,
-        type: 'stepNode',
-        position: { x: index * 300 + 50, y: 100 },
-        data: { 
-          step,
-          onClick: () => onNodeClick(step)
-        },
-      }))
+    const sortedSteps = [...steps].sort((a, b) => a.order - b.order)
+
+    const newNodes: Node[] = sortedSteps.map((step, index) => ({
+      id: step.$id,
+      type: 'stepNode',
+      position: { x: index * 300 + 50, y: 100 },
+      data: {
+        step,
+        onClick: () => onNodeClick(step)
+      },
+    }))
 
     const newEdges: Edge[] = []
     for (let i = 0; i < newNodes.length - 1; i++) {
@@ -59,8 +68,18 @@ export function FlowDiagram({ steps, onNodeClick }: FlowDiagramProps) {
       })
     }
 
+    const t1 = typeof performance !== 'undefined' && (performance as any).now ? performance.now() : Date.now()
+    console.log(`[Perf] FlowDiagram build graph: ${(t1 - t0).toFixed(1)}ms (steps=${steps.length}, nodes=${newNodes.length}, edges=${newEdges.length})`)
+
     setNodes(newNodes)
     setEdges(newEdges)
+
+    try {
+      requestAnimationFrame(() => {
+        const t2 = typeof performance !== 'undefined' && (performance as any).now ? performance.now() : Date.now()
+        console.log(`[Perf] FlowDiagram setState->RAF ${(t2 - t1).toFixed(1)}ms`)
+      })
+    } catch {}
   }, [steps, onNodeClick, setNodes, setEdges])
 
   return (
@@ -72,6 +91,10 @@ export function FlowDiagram({ steps, onNodeClick }: FlowDiagramProps) {
         onEdgesChange={onEdgesChange}
         onConnect={onConnect}
         nodeTypes={nodeTypes}
+        onInit={() => {
+          const t = typeof performance !== 'undefined' && (performance as any).now ? performance.now() : Date.now()
+          console.log('[Perf] ReactFlow onInit at', t)
+        }}
         fitView
         fitViewOptions={{ padding: 0.2 }}
       >

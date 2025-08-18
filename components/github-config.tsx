@@ -2,17 +2,32 @@
 
 import { useState, useEffect } from 'react'
 import { Button } from '@/components/ui/button'
-import { Input } from '@/components/ui/input'
-import { Label } from '@/components/ui/label'
-import { Switch } from '@/components/ui/switch'
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card'
 import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle, DialogTrigger } from '@/components/ui/dialog'
-import { Badge } from '@/components/ui/badge'
 import { Alert, AlertDescription } from '@/components/ui/alert'
-import { Settings, Github, CheckCircle, XCircle, AlertCircle, ExternalLink } from 'lucide-react'
-import { getGitHubIntegration, resetGitHubIntegration, updateGitHubConfig } from '@/lib/github-integration'
+import { Github, CheckCircle, XCircle, AlertCircle, ExternalLink } from 'lucide-react'
 import { useProjectSync } from '@/hooks/use-project-sync'
 import { toast } from 'sonner'
+
+type ConnectionStatus = 'unknown' | 'connected' | 'error'
+
+type TestResponse = {
+  ok: boolean
+  enabled: boolean
+  hasAuth: boolean
+  hasRepo: boolean
+  user?: { login?: string; id?: number }
+  repository?: {
+    full_name?: string
+    private?: boolean
+    default_branch?: string
+    html_url?: string
+  }
+  rateLimitRemaining?: number
+  rateLimitReset?: number
+  message?: string
+  detail?: string
+}
 
 interface GitHubConfigProps {
   className?: string
@@ -20,153 +35,40 @@ interface GitHubConfigProps {
 
 export function GitHubConfig({ className }: GitHubConfigProps) {
   const [isOpen, setIsOpen] = useState(false)
-  const [config, setConfig] = useState({
-    token: '',
-    owner: '',
-    repo: '',
-    enabled: false
-  })
   const [isLoading, setIsLoading] = useState(false)
-  const [connectionStatus, setConnectionStatus] = useState<'unknown' | 'connected' | 'error'>('unknown')
-  const [repositoryInfo, setRepositoryInfo] = useState<any>(null)
+  const [connectionStatus, setConnectionStatus] = useState<ConnectionStatus>('unknown')
+  const [repositoryInfo, setRepositoryInfo] = useState<TestResponse['repository'] | null>(null)
+  const [testInfo, setTestInfo] = useState<TestResponse | null>(null)
   const { syncProjectToGitHub, syncAllProjectsToGitHub } = useProjectSync()
 
   useEffect(() => {
-    // Cargar configuración desde localStorage
-    const savedConfig = localStorage.getItem('github_config')
-    if (savedConfig) {
-      try {
-        const parsed = JSON.parse(savedConfig)
-        setConfig({
-          token: parsed.token || '',
-          owner: parsed.owner || '',
-          repo: parsed.repo || '',
-          enabled: parsed.enabled || false
-        })
-        
-        // Verificar si la integración está activa
-        const githubIntegration = getGitHubIntegration()
-        if (githubIntegration) {
-          setConnectionStatus('connected')
-          loadRepositoryInfo()
-        }
-      } catch (error) {
-        console.error('Error loading saved config:', error)
-      }
-    } else {
-      // Cargar desde variables de entorno como fallback
-      const envConfig = {
-        token: process.env.NEXT_PUBLIC_GITHUB_TOKEN || '',
-        owner: process.env.NEXT_PUBLIC_GITHUB_OWNER || '',
-        repo: process.env.NEXT_PUBLIC_GITHUB_REPO || '',
-        enabled: process.env.NEXT_PUBLIC_GITHUB_SYNC_ENABLED === 'true'
-      }
-      
-      // Solo cargar desde env si hay valores
-      if (envConfig.token || envConfig.owner || envConfig.repo) {
-        setConfig(envConfig)
-      }
-      
-      const githubIntegration = getGitHubIntegration()
-      if (githubIntegration) {
-        setConnectionStatus('connected')
-        loadRepositoryInfo()
-      }
-    }
+    // Chequear estado al montar
+    ;(async () => {
+      await loadStatus()
+    })()
   }, [])
 
-  const loadRepositoryInfo = async () => {
-    try {
-      const githubIntegration = getGitHubIntegration()
-      if (githubIntegration) {
-        const info = await githubIntegration.getRepositoryInfo()
-        setRepositoryInfo(info)
-      }
-    } catch (error) {
-      console.error('Error loading repository info:', error)
-    }
-  }
-
-  const testConnection = async () => {
+  const loadStatus = async () => {
     setIsLoading(true)
     try {
-      // Crear una instancia temporal para probar
-      const { GitHubIntegration } = await import('@/lib/github-integration')
-      const tempIntegration = new GitHubIntegration({
-        token: config.token,
-        owner: config.owner,
-        repo: config.repo,
-        enabled: true
-      })
+      const res = await fetch('/api/github/test', { cache: 'no-store' })
+      const json: TestResponse = await res.json()
+      setTestInfo(json)
 
-      const isConnected = await tempIntegration.testConnection()
-      if (isConnected) {
-        setConnectionStatus('connected')
-        const info = await tempIntegration.getRepositoryInfo()
-        setRepositoryInfo(info)
-        toast.success('Conexión exitosa con GitHub')
-      } else {
-        setConnectionStatus('error')
-        toast.error('Error al conectar con GitHub')
+      const connected = Boolean(json?.ok && json?.enabled && json?.hasAuth && json?.hasRepo)
+      setConnectionStatus(connected ? 'connected' : json?.enabled ? 'error' : 'unknown')
+      setRepositoryInfo(json?.repository ?? null)
+
+      if (!connected && json?.message) {
+        // Log suave, no ruido en UI
+        console.debug('GitHub test:', json.message)
       }
     } catch (error) {
       setConnectionStatus('error')
-      toast.error('Error al probar la conexión')
-      console.error('Connection test error:', error)
+      setRepositoryInfo(null)
+      console.error('Error testing GitHub connection:', error)
     } finally {
       setIsLoading(false)
-    }
-  }
-
-  const saveConfiguration = async () => {
-    setIsLoading(true)
-    try {
-      // Usar la nueva función para actualizar la configuración
-      updateGitHubConfig(config)
-      
-      // Disparar evento personalizado para notificar a otros componentes
-      window.dispatchEvent(new Event('github-config-updated'))
-      
-      // Verificar la conexión después de guardar
-      if (config.enabled && config.token && config.owner && config.repo) {
-        const githubIntegration = getGitHubIntegration()
-        if (githubIntegration) {
-          const isConnected = await githubIntegration.testConnection()
-          if (isConnected) {
-            setConnectionStatus('connected')
-            const info = await githubIntegration.getRepositoryInfo()
-            setRepositoryInfo(info)
-          } else {
-            setConnectionStatus('error')
-          }
-        }
-      } else {
-        setConnectionStatus('unknown')
-        setRepositoryInfo(null)
-      }
-      
-      toast.success('Configuración guardada exitosamente')
-      setIsOpen(false)
-    } catch (error) {
-      toast.error('Error al guardar la configuración')
-      console.error('Save configuration error:', error)
-    } finally {
-      setIsLoading(false)
-    }
-  }
-
-  const forceBatchCommit = async () => {
-    try {
-      const githubIntegration = getGitHubIntegration()
-      if (githubIntegration) {
-        await githubIntegration.forceBatchCommit()
-        toast.success('Cambios pendientes sincronizados con GitHub')
-      } else {
-        toast.error('GitHub no está configurado')
-      }
-    } catch (error) {
-      toast.error('Error al sincronizar cambios')
-      console.error('Force batch commit error:', error)
     }
   }
 
@@ -192,6 +94,21 @@ export function GitHubConfig({ className }: GitHubConfigProps) {
     }
   }
 
+  const handleSyncCurrentProject = async () => {
+    try {
+      const parts = window.location.pathname.split('/')
+      const idx = parts.indexOf('projects')
+      if (idx !== -1 && parts[idx + 1]) {
+        const projectId = parts[idx + 1]
+        await syncProjectToGitHub(projectId)
+      } else {
+        toast.error('No se pudo detectar el proyecto actual')
+      }
+    } catch (e) {
+      console.error('Error syncing current project:', e)
+    }
+  }
+
   return (
     <Dialog open={isOpen} onOpenChange={setIsOpen}>
       <DialogTrigger asChild>
@@ -208,7 +125,7 @@ export function GitHubConfig({ className }: GitHubConfigProps) {
             Configuración de GitHub
           </DialogTitle>
           <DialogDescription>
-            Configura la integración con GitHub para sincronizar automáticamente el historial de cambios.
+            Sincroniza proyectos y cambios con GitHub mediante endpoints de servidor seguros.
           </DialogDescription>
         </DialogHeader>
 
@@ -220,14 +137,34 @@ export function GitHubConfig({ className }: GitHubConfigProps) {
                 Estado de Conexión
                 {getStatusIcon()}
               </CardTitle>
+              <CardDescription>
+                {connectionStatus === 'connected'
+                  ? 'Integración habilitada y con acceso al repositorio.'
+                  : connectionStatus === 'error'
+                  ? 'Hay un problema con la configuración o permisos.'
+                  : 'La integración no está habilitada en el servidor.'}
+              </CardDescription>
             </CardHeader>
             <CardContent>
-              <div className="flex items-center justify-between">
-                <div>
-                  <p className="text-sm font-medium">{getStatusText()}</p>
+              <div className="flex items-start justify-between gap-4">
+                <div className="space-y-1 text-sm">
+                  <p className="font-medium">{getStatusText()}</p>
                   {repositoryInfo && (
+                    <>
+                      <p className="text-xs text-muted-foreground">
+                        {repositoryInfo.full_name} • {repositoryInfo.private ? 'Privado' : 'Público'}
+                      </p>
+                      {repositoryInfo.default_branch && (
+                        <p className="text-xs text-muted-foreground">
+                          Branch por defecto: {repositoryInfo.default_branch}
+                        </p>
+                      )}
+                    </>
+                  )}
+                  {testInfo && (
                     <p className="text-xs text-muted-foreground">
-                      {repositoryInfo.full_name} • {repositoryInfo.private ? 'Privado' : 'Público'}
+                      Enabled: {String(testInfo.enabled)} • Auth: {String(testInfo.hasAuth)} • Repo:{' '}
+                      {String(testInfo.hasRepo)}
                     </p>
                   )}
                 </div>
@@ -235,16 +172,16 @@ export function GitHubConfig({ className }: GitHubConfigProps) {
                   <Button
                     variant="outline"
                     size="sm"
-                    onClick={forceBatchCommit}
-                    disabled={connectionStatus !== 'connected'}
+                    onClick={loadStatus}
+                    disabled={isLoading}
                   >
-                    Sincronizar Pendientes
+                    {isLoading ? 'Probando...' : 'Probar Conexión'}
                   </Button>
-                  {repositoryInfo && (
+                  {repositoryInfo?.html_url && (
                     <Button
                       variant="outline"
                       size="sm"
-                      onClick={() => window.open(repositoryInfo.html_url, '_blank')}
+                      onClick={() => window.open(repositoryInfo.html_url!, '_blank')}
                     >
                       <ExternalLink className="h-4 w-4" />
                     </Button>
@@ -254,66 +191,14 @@ export function GitHubConfig({ className }: GitHubConfigProps) {
             </CardContent>
           </Card>
 
-          {/* Configuración */}
-          <Card>
-            <CardHeader>
-              <CardTitle className="text-sm">Configuración</CardTitle>
-              <CardDescription>
-                Configura los detalles de tu repositorio de GitHub.
-              </CardDescription>
-            </CardHeader>
-            <CardContent className="space-y-4">
-              <div className="flex items-center space-x-2">
-                <Switch
-                  id="enabled"
-                  checked={config.enabled}
-                  onCheckedChange={(checked) => setConfig(prev => ({ ...prev, enabled: checked }))}
-                />
-                <Label htmlFor="enabled">Habilitar sincronización con GitHub</Label>
-              </div>
-
-              <div className="grid grid-cols-2 gap-4">
-                <div className="space-y-2">
-                  <Label htmlFor="owner">Propietario</Label>
-                  <Input
-                    id="owner"
-                    placeholder="usuario o organización"
-                    value={config.owner}
-                    onChange={(e) => setConfig(prev => ({ ...prev, owner: e.target.value }))}
-                  />
-                </div>
-                <div className="space-y-2">
-                  <Label htmlFor="repo">Repositorio</Label>
-                  <Input
-                    id="repo"
-                    placeholder="nombre-del-repositorio"
-                    value={config.repo}
-                    onChange={(e) => setConfig(prev => ({ ...prev, repo: e.target.value }))}
-                  />
-                </div>
-              </div>
-
-              <div className="space-y-2">
-                <Label htmlFor="token">Token de Acceso Personal</Label>
-                <Input
-                  id="token"
-                  type="password"
-                  placeholder="ghp_..."
-                  value={config.token}
-                  onChange={(e) => setConfig(prev => ({ ...prev, token: e.target.value }))}
-                />
-                <p className="text-xs text-muted-foreground">
-                  Necesitas un token con permisos de escritura en el repositorio.
-                </p>
-              </div>
-            </CardContent>
-          </Card>
-
-          {/* Información sobre la nueva estrategia */}
+          {/* Información de estrategia */}
           <Alert>
             <AlertCircle className="h-4 w-4" />
             <AlertDescription className="text-sm">
-              <strong>Nueva Estrategia:</strong> Sincronización a nivel de proyecto. Los proyectos se guardan completos con todos sus flows y steps en GitHub.
+              La configuración se gestiona en el servidor mediante variables de entorno. Define en
+              tu .env:
+              GITHUB_SYNC_ENABLED=true, GITHUB_TOKEN, GITHUB_OWNER, GITHUB_REPO.
+              Reinicia el servidor tras cambios.
             </AlertDescription>
           </Alert>
 
@@ -322,23 +207,14 @@ export function GitHubConfig({ className }: GitHubConfigProps) {
             <Card>
               <CardHeader>
                 <CardTitle className="text-sm">Sincronización de Proyectos</CardTitle>
+                <CardDescription>Exporta proyectos como JSON y README.</CardDescription>
               </CardHeader>
               <CardContent className="space-y-3">
                 <div className="flex gap-2">
                   <Button
                     variant="outline"
                     size="sm"
-                    onClick={() => {
-                      // Obtener projectId desde la URL si estamos en una página de proyecto
-                      const pathParts = window.location.pathname.split('/')
-                      const projectIndex = pathParts.indexOf('projects')
-                      if (projectIndex !== -1 && pathParts[projectIndex + 1]) {
-                        const projectId = pathParts[projectIndex + 1]
-                        syncProjectToGitHub(projectId)
-                      } else {
-                        toast.error('No se pudo detectar el proyecto actual')
-                      }
-                    }}
+                    onClick={handleSyncCurrentProject}
                     disabled={isLoading}
                   >
                     Sincronizar Proyecto Actual
@@ -359,23 +235,11 @@ export function GitHubConfig({ className }: GitHubConfigProps) {
             </Card>
           )}
 
-          {/* Botones de acción */}
-          <div className="flex justify-between">
-            <Button
-              variant="outline"
-              onClick={testConnection}
-              disabled={isLoading || !config.token || !config.owner || !config.repo}
-            >
-              {isLoading ? 'Probando...' : 'Probar Conexión'}
+          {/* Ayuda */}
+          <div className="flex justify-end">
+            <Button variant="outline" onClick={() => setIsOpen(false)}>
+              Cerrar
             </Button>
-            <div className="flex gap-2">
-              <Button variant="outline" onClick={() => setIsOpen(false)}>
-                Cancelar
-              </Button>
-              <Button onClick={saveConfiguration} disabled={isLoading}>
-                {isLoading ? 'Guardando...' : 'Guardar'}
-              </Button>
-            </div>
           </div>
         </div>
       </DialogContent>

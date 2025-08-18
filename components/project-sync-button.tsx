@@ -5,7 +5,6 @@ import { Button } from '@/components/ui/button'
 import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from '@/components/ui/tooltip'
 import { Upload, Loader2 } from 'lucide-react'
 import { useProjectSync } from '@/hooks/use-project-sync'
-import { getGitHubIntegration } from '@/lib/github-integration'
 
 interface ProjectSyncButtonProps {
   projectId: string
@@ -21,52 +20,33 @@ export default function ProjectSyncButton({
   showText = false 
 }: ProjectSyncButtonProps) {
   const [isLoading, setIsLoading] = useState(false)
-  const [githubIntegration, setGithubIntegration] = useState<any>(null)
+  const [isEnabled, setIsEnabled] = useState(false)
   const { syncProjectToGitHub } = useProjectSync()
 
-  // Verificar estado de integración de GitHub
+  // Verificar estado de integración de GitHub (servidor)
   useEffect(() => {
-    const checkGitHubIntegration = () => {
-      const integration = getGitHubIntegration()
-      setGithubIntegration(integration)
+    let cancelled = false
+    const check = async () => {
+      try {
+        const res = await fetch('/api/github/test', { cache: 'no-store' })
+        const json = await res.json()
+        if (!cancelled) {
+          setIsEnabled(Boolean(json?.ok && json?.enabled && json?.hasAuth && json?.hasRepo))
+        }
+      } catch {
+        if (!cancelled) setIsEnabled(false)
+      }
     }
-
-    checkGitHubIntegration()
-    
-    // Escuchar cambios en localStorage para actualizar el estado
-    const handleStorageChange = () => {
-      checkGitHubIntegration()
-    }
-
-    // Escuchar evento personalizado de actualización de configuración
-    const handleConfigUpdate = () => {
-      checkGitHubIntegration()
-    }
-
-    window.addEventListener('storage', handleStorageChange)
-    window.addEventListener('github-config-updated', handleConfigUpdate)
-    
-    // También verificar periódicamente por si la configuración cambia
-    const interval = setInterval(checkGitHubIntegration, 2000)
-
+    check()
     return () => {
-      window.removeEventListener('storage', handleStorageChange)
-      window.removeEventListener('github-config-updated', handleConfigUpdate)
-      clearInterval(interval)
+      cancelled = true
     }
   }, [])
 
   const handleSync = async () => {
-    if (!githubIntegration) {
-      return
-    }
-
     setIsLoading(true)
     try {
       await syncProjectToGitHub(projectId)
-      // Verificar nuevamente el estado después de la sincronización
-      const updatedIntegration = getGitHubIntegration()
-      setGithubIntegration(updatedIntegration)
     } catch (error) {
       console.error('Error syncing project:', error)
     } finally {
@@ -74,7 +54,7 @@ export default function ProjectSyncButton({
     }
   }
   
-  if (!githubIntegration) {
+  if (!isEnabled) {
     return null
   }
 

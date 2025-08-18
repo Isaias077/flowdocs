@@ -15,7 +15,11 @@ import { Badge } from '@/components/ui/badge'
 import { ArrowLeft, Plus, GitBranch, PanelLeftClose, PanelLeftOpen } from 'lucide-react'
 import { databases, DATABASE_ID, COLLECTIONS, ID, Query } from '@/lib/appwrite'
 import { Project, Flow, Step } from '@/types'
-import { FlowDiagram } from '@/components/flow-diagram'
+import dynamic from 'next/dynamic'
+const FlowDiagram = dynamic(() => import('@/components/flow-diagram').then(m => m.FlowDiagram), {
+  ssr: false,
+  loading: () => <div className="h-full flex items-center justify-center text-slate-500">Loading diagram...</div>
+})
 import { StepPanel } from '@/components/step-panel'
 import { FlowActions } from '@/components/flow-actions'
 import { FlowExport } from '@/components/flow-export'
@@ -54,55 +58,126 @@ export default function FlowPage() {
   })
 
   useEffect(() => {
+    try {
+      if (typeof performance !== 'undefined' && (performance as any).mark) {
+        performance.mark('flow_page_mount')
+      }
+    } catch {}
+    const t0 = (typeof performance !== 'undefined' && (performance as any).now)
+      ? performance.now()
+      : Date.now()
+
     if (projectId && flowId) {
-      fetchData()
+      fetchData().finally(() => {
+        const t1 = (typeof performance !== 'undefined' && (performance as any).now)
+          ? performance.now()
+          : Date.now()
+        const dur = t1 - t0
+        try {
+          if (typeof performance !== 'undefined' && (performance as any).measure) {
+            performance.measure('flow_time_to_data', 'flow_page_mount')
+          }
+        } catch {}
+        console.log(`[Perf] FlowPage data loaded in ${dur.toFixed(1)}ms`)
+      })
     }
   }, [projectId, flowId])
 
   const fetchData = async () => {
+    const label = '[FlowPage] fetchData'
+    console.time?.(label)
+    const t0 = (typeof performance !== 'undefined' && (performance as any).now)
+      ? performance.now()
+      : Date.now()
     try {
-      // Fetch project
-      const projectData = await databases.getDocument(
+      // parallel fetch
+      const p0 = (typeof performance !== 'undefined' && (performance as any).now)
+        ? performance.now()
+        : Date.now()
+      const projectPromise = databases.getDocument(
         DATABASE_ID,
         COLLECTIONS.PROJECTS,
         projectId
-      )
-      setProject(projectData as unknown as Project)
-
-      // Fetch current flow
-      const flowData = await databases.getDocument(
+      ).then((data) => {
+        const p1 = (typeof performance !== 'undefined' && (performance as any).now)
+          ? performance.now()
+          : Date.now()
+        console.log(`[Perf] FlowPage: getDocument(PROJECTS) ${(p1 - p0).toFixed(1)}ms`)
+        return data
+      })
+  
+      const f0a = (typeof performance !== 'undefined' && (performance as any).now)
+        ? performance.now()
+        : Date.now()
+      const flowPromise = databases.getDocument(
         DATABASE_ID,
         COLLECTIONS.FLOWS,
         flowId
-      )
-      setFlow(flowData as unknown as Flow)
-
-      // Fetch all flows for sidebar
-      const allFlowsResponse = await databases.listDocuments(
+      ).then((data) => {
+        const f1a = (typeof performance !== 'undefined' && (performance as any).now)
+          ? performance.now()
+          : Date.now()
+        console.log(`[Perf] FlowPage: getDocument(FLOWS/${flowId}) ${(f1a - f0a).toFixed(1)}ms`)
+        return data
+      })
+  
+      const f0 = (typeof performance !== 'undefined' && (performance as any).now)
+        ? performance.now()
+        : Date.now()
+      const allFlowsPromise = databases.listDocuments(
         DATABASE_ID,
         COLLECTIONS.FLOWS,
         [
           Query.equal('project_id', projectId),
           Query.orderDesc('$updatedAt')
         ]
-      )
-      setAllFlows(allFlowsResponse.documents as unknown as Flow[])
-
-      // Fetch steps
-      const stepsResponse = await databases.listDocuments(
+      ).then((res) => {
+        const f1 = (typeof performance !== 'undefined' && (performance as any).now)
+          ? performance.now()
+          : Date.now()
+        console.log(`[Perf] FlowPage: listDocuments(FLOWS list ${res.documents.length}) ${(f1 - f0).toFixed(1)}ms`)
+        return res
+      })
+  
+      const s0 = (typeof performance !== 'undefined' && (performance as any).now)
+        ? performance.now()
+        : Date.now()
+      const stepsPromise = databases.listDocuments(
         DATABASE_ID,
         COLLECTIONS.STEPS,
         [
           Query.equal('flow_id', flowId),
           Query.orderAsc('order')
         ]
-      )
+      ).then((res) => {
+        const s1 = (typeof performance !== 'undefined' && (performance as any).now)
+          ? performance.now()
+          : Date.now()
+        console.log(`[Perf] FlowPage: listDocuments(STEPS ${res.documents.length}) ${(s1 - s0).toFixed(1)}ms`)
+        return res
+      })
+  
+      const [projectData, flowData, allFlowsResponse, stepsResponse] = await Promise.all([
+        projectPromise,
+        flowPromise,
+        allFlowsPromise,
+        stepsPromise,
+      ])
+  
+      setProject(projectData as unknown as Project)
+      setFlow(flowData as unknown as Flow)
+      setAllFlows(allFlowsResponse.documents as unknown as Flow[])
       setSteps(stepsResponse.documents as unknown as Step[])
     } catch (error) {
       toast.error('Failed to fetch data')
       console.error('Error fetching data:', error)
     } finally {
       setIsLoading(false)
+      const t1 = (typeof performance !== 'undefined' && (performance as any).now)
+        ? performance.now()
+        : Date.now()
+      console.log(`[Perf] FlowPage total ${(t1 - t0).toFixed(1)}ms`)
+      console.timeEnd?.(label)
     }
   }
 

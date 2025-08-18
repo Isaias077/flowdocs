@@ -1,5 +1,5 @@
 import { databases, DATABASE_ID, COLLECTIONS, Query } from '@/lib/appwrite'
-import { getGitHubIntegration, ProjectExportData } from '@/lib/github-integration'
+import type { ProjectExportData } from '@/lib/github-integration'
 import { Project, Flow, Step } from '@/types'
 import { toast } from 'sonner'
 
@@ -75,18 +75,21 @@ export const useProjectSync = () => {
 
   const syncProjectToGitHub = async (projectId: string): Promise<void> => {
     try {
-      const githubIntegration = getGitHubIntegration()
-      
-      if (!githubIntegration) {
-        toast.error('GitHub integration not configured')
-        return
+      toast.loading('Sincronizando proyecto con GitHub...')
+
+      const projectData = await exportProjectData(projectId)
+
+      const res = await fetch('/api/github/sync', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ project: projectData }),
+      })
+      const json = await res.json()
+
+      if (!res.ok || !json?.ok) {
+        throw new Error(json?.message || 'GitHub sync failed')
       }
 
-      toast.loading('Sincronizando proyecto con GitHub...')
-      
-      const projectData = await exportProjectData(projectId)
-      await githubIntegration.syncProject(projectData)
-      
       toast.success(`Proyecto "${projectData.project.name}" sincronizado con GitHub`)
     } catch (error) {
       console.error('Error syncing project to GitHub:', error)
@@ -97,15 +100,8 @@ export const useProjectSync = () => {
 
   const syncAllProjectsToGitHub = async (): Promise<void> => {
     try {
-      const githubIntegration = getGitHubIntegration()
-      
-      if (!githubIntegration) {
-        toast.error('GitHub integration not configured')
-        return
-      }
-
       toast.loading('Sincronizando todos los proyectos con GitHub...')
-      
+
       // Obtener todos los proyectos
       const projectsResponse = await databases.listDocuments(
         DATABASE_ID,
@@ -114,14 +110,23 @@ export const useProjectSync = () => {
       )
 
       const allProjectsData: ProjectExportData[] = []
-      
+
       for (const project of projectsResponse.documents) {
         const projectData = await exportProjectData(project.$id)
         allProjectsData.push(projectData)
       }
 
-      await githubIntegration.syncAllProjects(allProjectsData)
-      
+      const res = await fetch('/api/github/sync', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ projects: allProjectsData }),
+      })
+      const json = await res.json()
+
+      if (!res.ok || !json?.ok) {
+        throw new Error(json?.message || 'GitHub sync failed')
+      }
+
       toast.success(`${allProjectsData.length} proyectos sincronizados con GitHub`)
     } catch (error) {
       console.error('Error syncing all projects to GitHub:', error)

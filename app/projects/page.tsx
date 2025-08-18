@@ -9,7 +9,7 @@ import { Input } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
 import { Textarea } from '@/components/ui/textarea'
 import { Plus, FolderOpen } from 'lucide-react'
-import { databases, DATABASE_ID, COLLECTIONS, ID } from '@/lib/appwrite'
+import { databases, DATABASE_ID, COLLECTIONS, ID, Query } from '@/lib/appwrite'
 import { Project } from '@/types'
 import { toast } from 'sonner'
 
@@ -23,26 +23,53 @@ export default function ProjectsPage() {
   })
 
   useEffect(() => {
-    fetchProjects()
+    try {
+      if (typeof performance !== 'undefined' && (performance as any).mark) {
+        performance.mark('projects_page_mount')
+      }
+    } catch {}
+    const t0 = (typeof performance !== 'undefined' && (performance as any).now)
+      ? performance.now()
+      : Date.now()
+
+    fetchProjects().finally(() => {
+      const t1 = (typeof performance !== 'undefined' && (performance as any).now)
+        ? performance.now()
+        : Date.now()
+      const dur = t1 - t0
+      try {
+        if (typeof performance !== 'undefined' && (performance as any).measure) {
+          performance.measure('projects_time_to_data', 'projects_page_mount')
+        }
+      } catch {}
+      console.log(`[Perf] ProjectsPage data loaded in ${dur.toFixed(1)}ms`)
+    })
   }, [])
 
   const fetchProjects = async () => {
+    const label = '[Projects] fetchProjects'
+    console.time?.(label)
+    const t0 = (typeof performance !== 'undefined' && (performance as any).now)
+      ? performance.now()
+      : Date.now()
     try {
       const response = await databases.listDocuments(
         DATABASE_ID,
-        COLLECTIONS.PROJECTS
+        COLLECTIONS.PROJECTS,
+        [Query.orderDesc('$updatedAt')] // orden en servidor
       )
       
-      const sortedProjects = response.documents.sort((a, b) => 
-        new Date(b.$updatedAt).getTime() - new Date(a.$updatedAt).getTime()
-      )
-      
-      setProjects(sortedProjects as unknown as Project[])
+      setProjects(response.documents as unknown as Project[])
+      const t1 = (typeof performance !== 'undefined' && (performance as any).now)
+        ? performance.now()
+        : Date.now()
+      console.log(`[Perf] Projects: fetched ${response.documents.length} projects in ${(t1 - t0).toFixed(1)}ms`)
     } catch (error) {
       toast.error('Failed to fetch projects')
       console.error('Error fetching projects:', error)
     } finally {
       setIsLoading(false)
+      console.timeEnd?.(label)
     }
   }
 

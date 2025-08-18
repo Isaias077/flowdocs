@@ -1,6 +1,5 @@
 import { databases, DATABASE_ID, COLLECTIONS, ID } from '@/lib/appwrite'
 import { FlowChangeLog } from '@/types'
-import { getGitHubIntegration } from '@/lib/github-integration'
 
 interface LogChangeParams {
   flowId: string
@@ -36,36 +35,38 @@ export const useChangelog = () => {
         changeData
       )
 
-      // Sincronizar con GitHub si está habilitado
-      const githubIntegration = getGitHubIntegration()
-      console.log('GitHub Integration status:', {
-        hasIntegration: !!githubIntegration,
-        changeType: params.changeType,
-        description: params.description
-      })
-      
-      if (githubIntegration) {
-        const changelogEntry = {
-          id: changeId,
-          change_type: params.changeType,
-          description: params.description,
-          old_value: params.oldValue || undefined,
-          new_value: params.newValue || undefined,
-          field_changed: params.fieldName || undefined,
-          flow_id: params.flowId,
-          step_id: params.stepId || undefined,
-          created_at: new Date().toISOString()
+      // Enviar cambio al servidor para sincronizar con GitHub (no bloquear la UI)
+      ;(async () => {
+        try {
+          const changelogEntry = {
+            id: changeId,
+            change_type: params.changeType,
+            description: params.description,
+            old_value: params.oldValue ?? undefined,
+            new_value: params.newValue ?? undefined,
+            field_changed: params.fieldName ?? undefined,
+            flow_id: params.flowId,
+            step_id: params.stepId ?? undefined,
+            created_at: new Date().toISOString(),
+          }
+
+          console.log('Syncing change to GitHub via API:', changelogEntry)
+
+          const res = await fetch('/api/github/change', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ change: changelogEntry }),
+          })
+
+          // No interrumpir la UI si falla; solo loguear
+          if (!res.ok) {
+            const text = await res.text().catch(() => '')
+            console.error('GitHub change sync failed:', res.status, text)
+          }
+        } catch (err) {
+          console.error('Unexpected error syncing change to GitHub:', err)
         }
-        
-        console.log('Syncing change to GitHub:', changelogEntry)
-        
-        // Sincronización asíncrona para no bloquear la UI
-        githubIntegration.syncChange(changelogEntry).catch(error => {
-          console.error('Error syncing to GitHub:', error)
-        })
-      } else {
-        console.log('GitHub integration not available - check configuration')
-      }
+      })()
     } catch (error) {
       console.error('Error logging change:', error)
       // No lanzamos el error para no interrumpir el flujo principal

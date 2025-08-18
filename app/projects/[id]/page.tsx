@@ -44,47 +44,109 @@ export default function ProjectPage() {
   })
 
   useEffect(() => {
+    try {
+      if (typeof performance !== 'undefined' && (performance as any).mark) {
+        performance.mark('project_page_mount')
+      }
+    } catch {}
+    const t0 = (typeof performance !== 'undefined' && (performance as any).now)
+      ? performance.now()
+      : Date.now()
+
     if (projectId) {
-      fetchProjectAndFlows()
+      fetchProjectAndFlows().finally(() => {
+        const t1 = (typeof performance !== 'undefined' && (performance as any).now)
+          ? performance.now()
+          : Date.now()
+        const dur = t1 - t0
+        try {
+          if (typeof performance !== 'undefined' && (performance as any).measure) {
+            performance.measure('project_time_to_data', 'project_page_mount')
+          }
+        } catch {}
+        console.log(`[Perf] ProjectPage data loaded in ${dur.toFixed(1)}ms`)
+      })
     }
   }, [projectId])
 
   const fetchProjectAndFlows = async () => {
+    const label = '[ProjectPage] fetchProjectAndFlows'
+    console.time?.(label)
+    const t0 = (typeof performance !== 'undefined' && (performance as any).now)
+      ? performance.now()
+      : Date.now()
     try {
-      // Fetch project
-      const projectData = await databases.getDocument(
+      // parallel fetch
+      const p0 = (typeof performance !== 'undefined' && (performance as any).now)
+        ? performance.now()
+        : Date.now()
+      const projectPromise = databases.getDocument(
         DATABASE_ID,
         COLLECTIONS.PROJECTS,
         projectId
-      )
-      setProject(projectData as unknown as Project)
-
-      // Fetch flows
-      const flowsResponse = await databases.listDocuments(
+      ).then((data) => {
+        const p1 = (typeof performance !== 'undefined' && (performance as any).now)
+          ? performance.now()
+          : Date.now()
+        console.log(`[Perf] ProjectPage: getDocument(PROJECTS/${projectId}) ${(p1 - p0).toFixed(1)}ms`)
+        return data
+      })
+  
+      const f0 = (typeof performance !== 'undefined' && (performance as any).now)
+        ? performance.now()
+        : Date.now()
+      const flowsPromise = databases.listDocuments(
         DATABASE_ID,
         COLLECTIONS.FLOWS,
         [
           Query.equal('project_id', projectId),
           Query.orderDesc('$updatedAt')
         ]
-      )
-      setFlows(flowsResponse.documents as unknown as Flow[])
-
-      // Fetch sections
-      const sectionsResponse = await databases.listDocuments(
+      ).then((res) => {
+        const f1 = (typeof performance !== 'undefined' && (performance as any).now)
+          ? performance.now()
+          : Date.now()
+        console.log(`[Perf] ProjectPage: listDocuments(FLOWS ${res.documents.length}) ${(f1 - f0).toFixed(1)}ms`)
+        return res
+      })
+  
+      const s0 = (typeof performance !== 'undefined' && (performance as any).now)
+        ? performance.now()
+        : Date.now()
+      const sectionsPromise = databases.listDocuments(
         DATABASE_ID,
         COLLECTIONS.SECTIONS,
         [
           Query.equal('project_id', projectId),
           Query.orderAsc('order')
         ]
-      )
+      ).then((res) => {
+        const s1 = (typeof performance !== 'undefined' && (performance as any).now)
+          ? performance.now()
+          : Date.now()
+        console.log(`[Perf] ProjectPage: listDocuments(SECTIONS ${res.documents.length}) ${(s1 - s0).toFixed(1)}ms`)
+        return res
+      })
+  
+      const [projectData, flowsResponse, sectionsResponse] = await Promise.all([
+        projectPromise,
+        flowsPromise,
+        sectionsPromise,
+      ])
+  
+      setProject(projectData as unknown as Project)
+      setFlows(flowsResponse.documents as unknown as Flow[])
       setSections(sectionsResponse.documents as unknown as Section[])
     } catch (error) {
       toast.error('Failed to fetch project data')
       console.error('Error fetching project:', error)
     } finally {
       setIsLoading(false)
+      const t1 = (typeof performance !== 'undefined' && (performance as any).now)
+        ? performance.now()
+        : Date.now()
+      console.log(`[Perf] ProjectPage total ${(t1 - t0).toFixed(1)}ms`)
+      console.timeEnd?.(label)
     }
   }
 
